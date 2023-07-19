@@ -15,6 +15,7 @@ library(ggplot2)
 library(glmmTMB)
 #library(forcats)
 #library(cowplot)
+library(lmtest)
 
 #### 1 Load data and prepare ####
 
@@ -26,65 +27,393 @@ roach_long=read_csv("./data/roach_long.csv")
 
 #### 1.1 Set up labels and factors ####
 
-roach_wide$treatment <- factor(roach_wide$treatment, labels = c("Uncovered (A)","Covered (B)"))
-roach_wide$ps_tank_end <- factor(roach_wide$ps_tank_end, labels = c("RH","LH"))
-roach_wide$room_end <- factor(roach_wide$room_end, labels = c("Far","Near"))
-roach_wide$light <- factor(roach_wide$light, labels = c("Day","Night"))
-roach_wide$hab_avail <- factor(roach_wide$hab_avail, labels = c("AH unavailable","AH available"))
-roach_wide$ps_avail <- factor(roach_wide$ps_avail, labels = c("PS unavailable","PS available"))
-roach_wide$both_avail <- factor(roach_wide$both_avail, labels = c("Single available","Both available"))
-roach_wide$hours_havail <- as.factor(roach_wide$hours_havail)
-roach_wide$hours_lout <- as.factor(roach_wide$hours_lout)
-roach_wide$sequence <- factor(roach_wide$sequence, labels = c("Baseline","I 1", "I 2", "I 3"))
-roach_wide$run <- as.factor(roach_wide$run)
-roach_wide$day <- as.factor(roach_wide$day)
-roach_wide$trial <- as.factor(roach_wide$trial)
+#Poor code which repeats function calls for each variable ####
+# roach_wide$treatment <- factor(roach_wide$treatment, labels = c("Uncovered (A)","Covered (B)"))
+# roach_wide$ps_tank_end <- factor(roach_wide$ps_tank_end, labels = c("RH","LH"))
+# roach_wide$room_end <- factor(roach_wide$room_end, labels = c("Far","Near"))
+# roach_wide$light <- factor(roach_wide$light, labels = c("Day","Night"))
+# roach_wide$hab_avail <- factor(roach_wide$hab_avail, labels = c("AH unavailable","AH available"))
+# roach_wide$ps_avail <- factor(roach_wide$ps_avail, labels = c("PS unavailable","PS available"))
+# roach_wide$both_avail <- factor(roach_wide$both_avail, labels = c("Single available","Both available"))
+# roach_wide$hours_havail <- as.factor(roach_wide$hours_havail)
+# roach_wide$hours_lout <- as.factor(roach_wide$hours_lout)
+# roach_wide$sequence <- factor(roach_wide$sequence, labels = c("Baseline","I 1", "I 2", "I 3"))
+# roach_wide$run <- as.factor(roach_wide$run)
+# roach_wide$day <- as.factor(roach_wide$day)
+# roach_wide$trial <- as.factor(roach_wide$trial)
+# roach_long$treatment <- factor(roach_long$treatment, labels = c("Unsheltered (A)","Sheltered (B)"))
+# roach_long$ps_tank_end <- factor(roach_long$ps_tank_end, labels = c("RH","LH"))
+# roach_long$room_end <- factor(roach_long$room_end, labels = c("Far","Near"))
+# roach_long$light <- factor(roach_long$light, labels = c("Day","Night"))
+# roach_long$sequence <- factor(roach_long$sequence, labels = c("Baseline","I 1", "I 2", "I 3"))
+# roach_long$run <- as.factor(roach_long$run)
+# roach_long$day <- as.factor(roach_long$day)
+# roach_long$trial <- as.factor(roach_long$trial)
+# roach_long$hab <- factor(roach_long$hab, labels = c("PS","OW","AH"))
+# roach_long$hab_avail <- factor(roach_long$hab_avail, labels = c("PS_a","AH_a","Both_a"))
+# roach_long$ow_loc <- factor(roach_long$hab, labels = c("Reeds","OW center","PS screen"))
+# roach_long$counted_yn<-factor(roach_long$counted_yn, labels = c("No","Yes"))
 
-roach_long$treatment <- factor(roach_long$treatment, labels = c("Unsheltered (A)","Sheltered (B)"))
-roach_long$ps_tank_end <- factor(roach_long$ps_tank_end, labels = c("RH","LH"))
-roach_long$room_end <- factor(roach_long$room_end, labels = c("Far","Near"))
-roach_long$light <- factor(roach_long$light, labels = c("Day","Night"))
-roach_long$sequence <- factor(roach_long$sequence, labels = c("Baseline","I 1", "I 2", "I 3"))
-roach_long$run <- as.factor(roach_long$run)
-roach_long$day <- as.factor(roach_long$day)
-roach_long$trial <- as.factor(roach_long$trial)
-roach_long$hab <- factor(roach_long$hab, labels = c("PS","OW","AH"))
-roach_long$hab_avail <- factor(roach_long$hab_avail, labels = c("PS_a","AH_a","Both_a"))
-roach_long$ow_loc <- factor(roach_long$hab, labels = c("Reeds","OW center","PS screen"))
-roach_long$counted_yn<-factor(roach_long$counted_yn, labels = c("No","Yes"))
 
-#### 1.2 Create new DF with pseudo-observations to replace 0's where habitat unavailable or unused ####
+#Improve code using if else ####
+# 
+# convert_vars <- c("treatment", "ps_tank_end", "room_end", "light", "hab_avail",
+#                   "ps_avail", "both_avail", "sequence")
+# 
+# # Convert variables to factors with specific labeling using a loop
+# for (var in convert_vars) {
+#   levels <- unique(roach_wide[[var]])
+#   labels <- levels
+#   if (var == "treatment") {
+#     labels <- c("Uncovered (A)", "Covered (B)")
+#   } else if (var == "ps_tank_end") {
+#     labels <- c("RH", "LH")
+#   } else if (var == "room_end") {
+#     labels <- c("Far", "Near")
+#   } else if (var == "light") {
+#     labels <- c("Day", "Night")
+#   } else if (var == "hab_avail") {
+#     labels <- c("AH unavailable", "AH available")
+#   } else if (var == "ps_avail") {
+#     labels <- c("PS unavailable", "PS available")
+#   } else if (var == "both_avail") {
+#     labels <- c("Single Available", "Both Available")
+#   } else if (var == "sequence") {
+#     labels <- c("Baseline", "I 1", "I 2", "I 3")
+#   }
+#   
+#   roach_wide[[var]] <- factor(roach_wide[[var]], levels = levels, labels = labels)
+# }
+
+#Improve code further using lookup table####
+
+convert_vars <- c("treatment", "ps_tank_end", "room_end", "light", "hab_avail",
+                  "ps_avail", "both_avail", "sequence")
+
+# Create a lookup table for variable labels
+labels_table <- list(
+  treatment = c('Uncovered (A)', 'Covered (B)'),
+  ps_tank_end = c('RH', 'LH'),
+  room_end = c('Far', 'Near'),
+  light = c('Day', 'Night'),
+  hab_avail = c('AH unavailable', 'AH available'),
+  ps_avail = c('PS unavailable', 'PS available'),
+  both_avail = c('Single Available', 'Both Available'),
+  sequence = c('Baseline', 'I 1', 'I 2', 'I 3')
+)
+
+# Convert variables to factors with specific labeling using a loop
+# Use the lookup table to get the labels for each variable
+for (var in convert_vars) {
+  levels <- unique(roach_wide[[var]])
+  labels <- labels_table[[var]]
+  roach_wide[[var]] <- factor(roach_wide[[var]], levels = levels, labels = labels)
+}
+
+# Convert other variables to factors without applying labels
+other_vars <- c("hours_havail", "hours_lout", "run", "day", "trial")
+roach_wide[other_vars] <- lapply(roach_wide[other_vars], as.factor)
+
+
+#### 1.2 Create new DF with pseudo-observations to replace 10% of 0's where habitat unavailable or unused ####
 
 # Set a specific seed value for reproducibility
 set.seed(123)  
-
+#Unoptimized code####
+# roach_wide_po <- roach_wide %>%
+#   mutate(c_hab = ifelse(sequence == "Baseline" & c_hab == 0,
+#                         ifelse(row_number() %in% sample(which(sequence == "Baseline" & c_hab == 0), 177),
+#                                1,
+#                                c_hab),
+#                         c_hab)) %>%
+#   mutate(c_ps = ifelse(sequence == "I 2" & c_ps == 0,
+#                        ifelse(row_number() %in% sample(which(sequence == "I 2" & c_ps == 0), 177),
+#                               1,
+#                               c_ps),
+#                        c_ps))
+#optimized code####
 roach_wide_po <- roach_wide %>%
-  mutate(c_hab = ifelse(sequence == "Baseline" & c_hab == 0,
-                        ifelse(row_number() %in% sample(which(sequence == "Baseline" & c_hab == 0), 177),
-                               1,
-                               c_hab),
-                        c_hab)) %>%
-  mutate(c_ps = ifelse(sequence == "I 2" & c_ps == 0,
-                       ifelse(row_number() %in% sample(which(sequence == "I 2" & c_ps == 0), 177),
-                              1,
-                              c_ps),
-                       c_ps))
+  mutate(c_hab = replace(c_hab, sequence == "Baseline" & c_hab == 0 & row_number() %in% sample(which(sequence == "Baseline" & c_hab == 0), round(0.05 * n())), 1)) %>%
+  mutate(c_ps = replace(c_ps, sequence == "I 2" & c_ps == 0 & row_number() %in% sample(which(sequence == "I 2" & c_ps == 0), round(0.05 * n())), 1))
 
 roach_long_po <- roach_long %>%
   mutate(count = ifelse((sequence == "Baseline" & hab == "AH" | sequence == "I 2" & hab == "PS") & count == 0,
                         ifelse(row_number() %in% sample(which((sequence == "Baseline" & hab == "AH" | sequence == "I 2" & hab == "PS") & count == 0), 354),
                                1,
-                               count),
-                        count))
+                               count), count))
+# need to update this to use replace instead of ifelse
+
+ggplot(roach_wide_po, aes(sequence,c_hab, fill=light))+
+  geom_boxplot()
+ggplot(roach_wide_po, aes(sequence,c_ps, fill=light))+
+  geom_boxplot()
+ggplot(roach_wide_po, aes(sequence,c_open, fill=light))+
+  geom_boxplot()
+#### 2 GLMM ####
 
 #Appears glmmTMB cannot handle multinomial responses
-
 #First consider original approach of splitting data
+#+ar1(day+0|trial)
 
-model1 <- glmmTMB(c_hab ~ sequence + light + treatment + (1 | run/trial) + ar1(day+0|trial), data = roach_wide_po, family=nbinom1)
+#Model 1 - predict c_hab####
+#trial day cannot be used as a fixed effect as this assumes independence between observations
+#can only be considered as a random effect to account for temporal dependence
+#baseline sequence should be removed as fish cna never be in AH here
+#therefore, pseudo observations would not be required. Build both models and compre
+
+model1 <- glmmTMB(c_hab ~ sequence + light + treatment +  ps_tank_end + (1 | run/trial), data = roach_wide_po, family=nbinom1)
 
 summary(model1)
+#AIC 27205
 
 plot(ggpredict(model1, terms = c("sequence")))
-plot(ggpredict(model1, terms = c("sequence","treatment")))
+plot(ggpredict(model1, terms = c("sequence","light")))
 
+#Model predictions follow same pattern as observed, count predictions only slightly lower
+#Update model to consider nbinom2 distribution (e.g., add shape consideration)
+
+model1.1 <- update(model1, family = nbinom2())
+
+# Print the updated model summary
+summary(model1.1)
+plot(ggpredict(model1.1, terms = c("sequence","light")))
+#AIC 28339
+#change in AIC indicates worst fit? > perform LRT
+
+lrtest(model1, model1.1)
+
+#Significant LRT suggests improved fit
+#At this stage, it is unclear which provides a better fit as LRT suggests nbinom2, but AIC suggests nbinom1
+#continue with nbinom1 and consider changing at end of selection process
+
+#Drop ps_tank_end to determine influence
+
+model1.2 <- update(model1, . ~ . - ps_tank_end)
+
+summary(model1.2)
+#AIC 27215
+plot(ggpredict(model1.2, terms = c("sequence","light")))
+
+lrtest(model1, model1.2)
+
+#Suggests model without ps_tank_end is  better, possibly because tank effects are captured in random effect of trial/run?
+#inflates errors in predictions slightly, does this matter?
+
+##Currently the best model for predicting counts close to real values
+
+#Next, consider adding effect of day to account for autoregression
+#also need to consider zero inflation
+
+model1.3 <- update(model1, . ~ . + (1|day))
+
+summary(model1.3)
+plot(ggpredict(model1.3, terms = c("sequence","light")))
+
+#Poor fit for model. Do not use term 'day' as random factor for autoregression
+#consider AR1 structure after next approach
+
+#update model with sequential experimental days
+
+model1.4 <- update(model1, . ~ . + (1|seq_day))
+
+summary(model1.4)
+#AIC 25233
+#Significantly reduces AIC
+plot(ggpredict(model1.4, terms = c("sequence","light")))
+#Adds a lot of uncertainity to model predictions when attempting to account for experimental days
+#Possibly confounded by large between-run differences
+lrtest(model1, model1.4)
+
+#AIC and lrt suggest an improved model. However, the fitted values are over fitted. The model is too complex for the available data and has poor predictions.
+#Inclusion of seq_day and day both unsuitable for capturing temporal autocorrelation
+#Also attempted with dropped ps_tank_end term, improves model but error still large
+#Also attempted with dropped ps_tank_end term and nbinom2 family, error inflates with family change
+
+
+#before progressing. Try using AR structure
+
+roach_wide_po$seq_day <- as.factor(roach_wide_po$seq_day)
+
+model1.5 <- update(model1, . ~ . + ar1(day+0|trial))
+summary(model1.5)
+#AIC 25233
+#Significantly reduces AIC
+plot(ggpredict(model1.5, terms = c("sequence","light")))
+lrtest(model1, model1.5)
+
+
+#Model 1 - Start over with omitting baseline sequence####
+
+mod1 <- glmmTMB(c_hab ~ sequence + light + treatment + ps_tank_end + (1 | run/trial), data = roach_wide_po%>%filter(sequence!="Baseline"), family=nbinom1)
+summary(mod1)
+plot(ggpredict(mod1, terms = c("sequence","light")))
+
+#AIC 24922
+#Predicted values follow same relationship as observed but reduced count
+
+#remove ps_tank_end as potentially conflicting for same information as run/trial
+
+mod1.1 <- update(mod1, . ~ . - ps_tank_end)
+summary(mod1.1)
+plot(ggpredict(mod1.1, terms = c("sequence","light")))
+#AIC 24932
+#Predicted values closer to observed, but error range higher
+lrtest(mod1, mod1.1)
+#log likelihood higher on model without ps_tank_end
+
+#Add regressive structure for temporal dependence
+
+mod1.2 <- update(mod1.1, . ~ . + ar1(day+0|trial))
+summary(mod1.2)
+plot(ggpredict(mod1.2, terms = c("sequence","light")))
+#AIC 22846
+#Predicted values lower, error higher
+lrtest(mod1.1, mod1.2)
+#LRT suggests model without AR1 structure a better fit
+
+#continue with mod1.1, consider zero-inflation
+
+fittedmod1.1 <- mod1.1
+simuout1 <- simulateResiduals(fittedModel = fittedmod1.1)
+plot(simuout1)
+
+testDispersion(simuout1) #underdispersed
+testZeroInflation(simuout1) #zero inflation present
+
+#first try switching to a poisson model
+
+mod1.3 <- update(mod1, .~. - ps_tank_end, family=poisson())
+summary(mod1.3)
+#29167
+plot(ggpredict(mod1.3, terms = c("sequence","light")))
+
+lrtest(mod1, mod1.3)
+#LRT suggests switching to poisson family and dropping tank end improves model
+
+fittedmod1.3 <- mod1.3
+simuout1 <- simulateResiduals(fittedModel = fittedmod1.3)
+plot(simuout1)
+
+testDispersion(simuout1) #dispersion issue from mod1 (nbinom + ps_tank_end) treated!
+testZeroInflation(simuout1) #zero inflation present
+
+#Add zero inflation component
+
+mod1.4 <- update(mod1.3,ziformula=~1)
+summary(mod1.4)
+#24543
+plot(ggpredict(mod1.4, terms = c("sequence","light")))
+
+lrtest(mod1.3, mod1.4)
+#LRT suggests model is not improved?
+
+fittedmod1.4 <- mod1.4
+simuout1 <- simulateResiduals(fittedModel = fittedmod1.4)
+plot(simuout1)
+
+testDispersion(simuout1) #dispersion issue treated
+testZeroInflation(simuout1) #zero inflation treated
+
+#try improve model prediction 
+
+mod1.5 <- glmmTMB(c_hab ~ sequence*light + treatment + (1 | run/trial), ziformula=~sequence, data = roach_wide_po%>%filter(sequence!="Baseline"), family=poisson())
+summary(mod1.5)
+plot(ggpredict(mod1, terms = c("sequence","light")))
+
+fittedmod1.5 <- mod1.5
+simuout1 <- simulateResiduals(fittedModel = fittedmod1.5)
+plot(simuout1)
+
+testDispersion(simuout1) #dispersion issue treated
+testZeroInflation(simuout1) #zero inflation treated
+
+#Accepted model, although predictions for Intervention1 are suspiciously high.
+#cannot add AR1 structure as this under disperses data
+
+
+
+
+# Consider normalizing counts to a relative scale and modelling with Gaussian
+
+max_count <- max(roach_wide_po$c_hab)
+roach_wide_po$c_hab_normalized <- roach_wide_po$c_hab / max_count
+roach_wide_po$c_hab_normalized <- roach_wide_po$c_hab_normalized + 0.0000000001
+
+mod1.6 <- glmmTMB(c_hab_normalized ~ sequence + light + treatment + (1 | run/trial), data = roach_wide_po%>%filter(sequence!="Baseline"), family=gaussian(link="log"))
+summary(mod1.6)
+plot(ggpredict(mod1.6, terms = c("sequence", "light")))
+
+fittedmod1.6 <- mod1.6
+simuout1 <- simulateResiduals(fittedModel = fittedmod1.6)
+plot(simuout1, quantreg = T)
+
+testDispersion(simuout1) #no dispersion issue
+
+
+##Accepted model
+#Model with sequence, light, treatment, random effect of run/trial and gaussian (log)
+
+
+mod1.6.1 <- glmmTMB(count_normalized ~ sequence + light + treatment + (1 | run/trial)+ ar1(seq_day+0|trial), data = roach_wide_po%>%filter(sequence!="Baseline"), family=gaussian(link="log"))
+summary(mod1.6.1)
+plot(ggpredict(mod1.6.1, terms = c("sequence", "light")))
+
+fittedmod1.6.1 <- mod1.6.1
+simuout1 <- simulateResiduals(fittedModel = fittedmod1.6.1)
+plot(simuout1, quantreg = T)
+
+testDispersion(simuout1) 
+
+##Adding autoregression term overfits the data and causes underdispersion
+
+mod1.7 <- glmmTMB(count_normalized ~ sequence + light + treatment + ps_tank_end + (1 | run/trial), data = roach_wide_po%>%filter(sequence!="Baseline"), family=gaussian(link="log"))
+
+summary(mod1.7)
+plot(ggpredict(mod1.7, terms = c("sequence", "light")))
+
+fittedmod1.7 <- mod1.7
+simuout1 <- simulateResiduals(fittedModel = fittedmod1.7)
+plot(simuout1)
+
+testDispersion(simuout1) #dispersion issue treated
+
+#Adding ps_tank_end reduces AIC, but introduces clumpiness in residuals vs predicted. stick to without
+#Normalizing the counts to an occupancy scale eliminates zero inflation issue and provides prediction closer to observed
+
+
+
+
+
+#Model 2 - predict c_ps####
+#I2 should be removed as fish can never be in the PS here
+max_count <- max(roach_wide_po$c_ps)
+roach_wide_po$c_ps_normalized <- roach_wide_po$c_ps / max_count
+roach_wide_po$c_ps_normalized <- roach_wide_po$c_ps_normalized + 0.0000000001
+
+mod2 <- glmmTMB(c_ps_normalized ~ sequence + light + treatment + (1 | run/trial), data = roach_wide_po%>%filter(sequence!="I 2"), family=gaussian(link="log"))
+summary(mod2)
+
+table1 <-ggpredict(mod2, terms = c("sequence", "light"))
+plot(ggpredict(mod2, terms = c("sequence", "light")))
+fittedmod2 <- mod2
+simuout1 <- simulateResiduals(fittedModel = fittedmod2)
+plot(simuout1, quantreg = T)
+
+testDispersion(simuout1) #no dispersion issue
+
+
+#Model 3 - predict open water####
+max_count <- max(roach_wide_po$c_open)
+roach_wide_po$c_open_normalized <- roach_wide_po$c_open / max_count
+roach_wide_po$c_open_normalized <- roach_wide_po$c_open_normalized + 0.0000000001
+
+mod3 <- glmmTMB(c_open_normalized ~ sequence + light + treatment + (1 | run/trial), data = roach_wide_po, family=gaussian(link="log"))
+summary(mod3)
+
+table1 <-ggpredict(mod3, terms = c("sequence", "light"))
+plot(ggpredict(mod3, terms = c("sequence", "light")))
+fittedmod2 <- mod3
+simuout1 <- simulateResiduals(fittedModel = fittedmod2)
+plot(simuout1, quantreg = T)
+
+testDispersion(simuout1) #no dispersion issue
