@@ -49,5 +49,106 @@ for (var in names(labels_table)) {
 other_vars <- c("hours_havail", "hours_lout", "run", "day", "trial")
 roach_wide[other_vars] <- lapply(roach_wide[other_vars], as.factor)
 
+#3 GLMM ####
+##3.1 Data preparation ####
+
+#Extract hour from time variable and store as factor for random effect modelling
+roach_wide <- roach_wide %>%
+  mutate(time_factor = factor(as.numeric(format(strptime(time, format = "%H:%M:%S"), "%H"))))
+
+#standardise raw count data to scale of 0 - 1
+#across function looks at each habitat count variable, divides them by the max value, returns new variable
+#new variables are then adjusted to add 0.00000001 to any 0 entry
+roach_wide <- roach_wide %>%
+  mutate(across(c(c_hab, c_ps, c_open), ~ . / max(.), .names = "{.col}_normalized"),
+         across(ends_with("_normalized"), ~ ifelse(. == 0, . + 0.0000000001, .)))
+
+#Create new DF for binary model
+roach_binary <- roach_wide %>%filter (sequence=="I 1"|sequence=="I 3")%>%filter(light=="Day")
+roach_binary$binary <- ifelse(roach_binary$sequence =="I 1", 0,1)
 
 
+##3.2 Data exploration ####
+
+##3.3 Build ####
+###3.3.1 AH ####
+
+#Null model
+mod1 <- glmmTMB(c_hab_normalized ~ 1, data = roach_wide%>%filter(sequence!="Baseline"),
+                family = gaussian(link="log"))
+summary(mod1)
+
+#Add all fixed effects
+mod1.1 <- glmmTMB(c_hab_normalized ~  sequence + light + treatment + ps_tank_end + room_end,
+                  data = roach_wide%>%filter(sequence!="Baseline"),
+                  family = gaussian(link="log"))
+summary(mod1.1)
+
+
+#Remove unwanted fixed effects
+mod1.2 <- glmmTMB(c_hab_normalized ~ sequence + light + treatment,
+                  data = roach_wide%>%filter(sequence!="Baseline"),
+                  family = gaussian(link="log"))
+summary(mod1.2)
+
+
+#Add random effects
+mod1.3 <- glmmTMB(c_hab_normalized ~ sequence + light + treatment +  (1 | time_factor/day/trial),
+                  data = roach_wide%>%filter(sequence!="Baseline"),
+                  family = gaussian(link="log"))
+summary(mod1.3)
+
+###3.3.2 PS ####
+
+#Null model
+mod2 <- glmmTMB(c_ps_normalized ~ 1, data = roach_wide%>%filter(sequence!="I 2"),
+                family = gaussian(link="log"))
+summary(mod2)
+
+#Add all fixed effects
+mod2.1 <- glmmTMB(c_ps_normalized ~  sequence + light + treatment + ps_tank_end + room_end,
+                  data = roach_wide%>%filter(sequence!="I 2"),
+                  family = gaussian(link="log"))
+summary(mod2.1)
+
+
+#Remove unwanted fixed effects
+mod2.2 <- glmmTMB(c_ps_normalized ~ sequence + light + treatment,
+                  data = roach_wide%>%filter(sequence!="I 2"),
+                  family = gaussian(link="log"))
+summary(mod2.2)
+
+
+#Add random effects
+mod2.3 <- glmmTMB(c_ps_normalized ~ sequence + light + treatment +  (1 | time_factor/day/trial),
+                  data = roach_wide%>%filter(sequence!="I 2"),
+                  family = gaussian(link="log"))
+summary(mod2.3)
+
+
+###3.3.3 OW ####
+
+#Null model
+mod3 <- glmmTMB(c_open_normalized ~ 1, data = roach_wide,
+                family = gaussian(link="log"))
+summary(mod3)
+
+#Add all fixed effects
+mod3.1 <- glmmTMB(c_open_normalized ~  sequence + light + treatment + ps_tank_end + room_end,
+                  data = roach_wide,
+                  family = gaussian(link="log"))
+summary(mod3.1)
+
+
+#Remove unwanted fixed effects
+mod3.2 <- glmmTMB(c_open_normalized ~ sequence + light + treatment,
+                  data = roach_wide,
+                  family = gaussian(link="log"))
+summary(mod3.2)
+
+
+#Add random effects
+mod3.3 <- glmmTMB(c_open_normalized ~ sequence + light + treatment +  (1 | time_factor/day/trial),
+                  data = roach_wide,
+                  family = gaussian(link="log"))
+summary(mod3.3)
