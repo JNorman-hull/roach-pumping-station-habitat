@@ -100,7 +100,12 @@ fittedmod1.2 <- mod1.2
 simuout1 <- simulateResiduals(fittedModel = fittedmod1.2)
 plot(simuout1, quantreg = T)
 
-#Generally follows a linear relationship
+residualsmod1.2 <- residuals(mod1.2)
+qqnorm(residualsmod1.2)
+qqline(residualsmod1.2)
+hist(residualsmod1.2, breaks = "FD", col = "lightblue")
+
+#Generally follows a linear relationship, accepted as approx normal
 #quantile deviations likely a result of dispersion. Expected due to values close to 0 and 1.
 
 
@@ -133,7 +138,12 @@ fittedmod2.2 <- mod2.2
 simuout2 <- simulateResiduals(fittedModel = fittedmod2.2)
 plot(simuout2, quantreg = T)
 
-#Generally follows a linear relationship
+residualsmod2.2 <- residuals(mod2.2)
+qqnorm(residualsmod2.2)
+qqline(residualsmod2.2)
+hist(residualsmod2.2, breaks = "FD", col = "lightblue")
+
+#Deviates significantly from a normal distribution
 #quantile deviations likely a result of dispersion. Expected due to values close to 0 and 1.
 
 ###3.3.3 OW ####
@@ -165,6 +175,12 @@ fittedmod3.2 <- mod3.2
 simuout3 <- simulateResiduals(fittedModel = fittedmod3.2)
 plot(simuout3, quantreg = T)
 
+residualsmod3.2 <- residuals(mod3.2)
+qqnorm(residualsmod3.2)
+qqline(residualsmod3.2)
+hist(residualsmod3.2, breaks = "FD", col = "lightblue")
+
+#Deviates significantly from a normal distribution
 #Deviates from linear distribution. Confounded by daytime variation
 
 ###3.3.4 Binary ####
@@ -173,6 +189,11 @@ mod_binary_ah <- glmmTMB(c_hab_normalized ~ as.factor(binary) + (1 | time_factor
 
 plot(ggpredict(mod_binary_ah, terms = c("binary")))
 summary(mod_binary_ah)
+
+residualsmodmod_binary_ah <- residuals(mod_binary_ah)
+qqnorm(residualsmodmod_binary_ah)
+qqline(residualsmodmod_binary_ah)
+hist(residualsmodmod_binary_ah, breaks = "FD", col = "lightblue")
 
 mod_binary_ps <- glmmTMB(c_ps_normalized ~ as.factor(binary) + (1 | time_factor/day/trial), data = roach_binary, family = binomial())
 
@@ -310,3 +331,57 @@ hab_prob_plot
 ggsave(filename="hab_prob_plot2.svg", plot=hab_prob_plot,device = "svg",units="cm",width=10,height=8)
 
 
+
+
+
+
+#4 Statistical analysis ####
+
+#Sum of counts in each habitat
+roach_wide %>%
+  summarize(sum_c_hab = sum(c_hab),
+            sum_c_ps = sum(c_ps),
+            sum_c_open = sum(c_open))
+
+
+#Effect of experimental sequence on habitat occupancy
+
+#AH
+anov1<- aov(c_hab_normalized ~ sequence + Error(trial), data = roach_wide%>%filter(sequence!="Baseline"))
+summary(anov1)
+#AH
+anov2<- aov(c_ps_normalized ~ sequence + Error(trial), data = roach_wide%>%filter(sequence!="I 2"))
+summary(anov2)
+#OW
+anov3<- aov(c_open_normalized ~ sequence + Error(trial), data = roach_wide)
+summary(anov3)
+
+#Day night differences in standardized habitat occupancy data
+#Include standard error
+roach_wide %>%
+  group_by(light) %>%
+  summarize(mean_c_hab = mean(c_hab_normalized),
+            se_c_hab = sd(c_hab_normalized) / sqrt(n()),
+            mean_c_ps = mean(c_ps_normalized),
+            se_c_ps = sd(c_ps_normalized) / sqrt(n()),
+            mean_c_open = mean(c_open_normalized),
+            se_c_open = sd(c_open_normalized) / sqrt(n()))
+
+#Create new DF for paired comparison between baseline and intervention 1 pumping station occupancy
+#Remove 42 rows at random from baseline category to allow for paired comparison
+
+i1_base_ps<- roach_wide %>%
+  filter(sequence %in% c("Baseline", "I 1") & light == "Day") %>%
+  group_by(sequence) %>%
+  group_modify(~ slice(., sample(seq_len(n()), size = min_count$min_count))) %>%
+  ungroup()
+
+t.test(c_ps_normalized ~ sequence,data=i1_base_ps, paired = TRUE)
+
+i1_i2_hab<- roach_wide %>%
+  filter(sequence %in% c("I 1", "I 2") & light == "Day") %>%
+  group_by(sequence) %>%
+  group_modify(~ slice(., sample(seq_len(n()), size = min_count$min_count))) %>%
+  ungroup()
+
+t.test(c_hab_normalized ~ sequence,data=i1_i2_hab, paired = TRUE)
