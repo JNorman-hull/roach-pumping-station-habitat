@@ -27,12 +27,12 @@
      showgrid="false"
      borderlayer="true"
      inkscape:showpageshadow="false"
-     inkscape:zoom="1"
-     inkscape:cx="-152.5"
-     inkscape:cy="13"
+     inkscape:zoom="2"
+     inkscape:cx="154.75"
+     inkscape:cy="134.5"
      inkscape:window-width="1920"
      inkscape:window-height="1017"
-     inkscape:window-x="-8"
+     inkscape:window-x="1912"
      inkscape:window-y="-8"
      inkscape:window-maximized="1"
      inkscape:current-layer="svg157" />
@@ -238,12 +238,12 @@
      style="stroke-width:1.07"
      id="rect89" />
   <rect
-     style="fill:#ffffff;fill-opacity:1;stroke-width:1.13596;stroke-miterlimit:10;stroke-dasharray:none;paint-order:stroke fill markers"
+     style="fill:#ffffff;fill-opacity:1;stroke-width:1.16907;stroke-miterlimit:10;stroke-dasharray:none;paint-order:stroke fill markers"
      id="rect5119"
-     width="80.089043"
-     height="26.810944"
-     x="47.003952"
-     y="10.134499" />
+     width="84.930931"
+     height="26.777832"
+     x="47.020508"
+     y="10.151054" />
   <line
      x1="51.38681"
      y1="19.378822"
@@ -274,7 +274,7 @@
        id="tspan7937"
        style="stroke-width:0.75"
        x="60.405975"
-       y="32.854019">Covered     (B)</tspan></text>
+       y="32.854019">Sheltered     (B)</tspan></text>
   <text
      xml:space="preserve"
      style="font-size:9.99998px;line-height:1.25;font-family:Arial;-inkscape-font-specification:'Arial, Normal';font-variant-ligatures:none;stroke-width:0.75"
@@ -285,7 +285,7 @@
        id="tspan13697"
        style="stroke-width:0.75"
        x="60.7696"
-       y="21.089916">Uncovered (A)</tspan></text>
+       y="21.089916">Unsheltered (A)</tspan></text>
   <text
      xml:space="preserve"
      style="font-size:9.99998px;line-height:1.25;font-family:Arial;-inkscape-font-specification:'Arial, Normal';font-variant-ligatures:none;stroke-width:0.75"

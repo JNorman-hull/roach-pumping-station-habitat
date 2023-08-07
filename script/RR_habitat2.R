@@ -5,26 +5,39 @@
 #Required libraries####
 
 library(tidyverse)
+library(funModeling)
+library(dlookr)
+
 #library(dunn.test)
 #library(car)
 library(ggeffects)
 library(DHARMa)
 #library(rstatix)
 library(ggpubr)
-library(ggplot2)
 library(glmmTMB)
-#library(forcats)
 #library(cowplot)
 
 #1 Load data and prepare ####
 
 # roach_wide.csv - wide data set where habitat counts are stored in columns c_hab, c_open, c_ps, c_both 
 roach_wide=read_csv("./data/roach_wide.csv")
-# roach_long - long data set where habitat counts are stacked (counted) and grouped by column hab 1 = PS, 2 = OW, 3 = AH
-# hab_avail 1 = ps, 2 = AH, 3 = both
-roach_long=read_csv("./data/roach_long.csv")
 
-##1.1 Set up labels and factors ####
+##1.1 Data discovery####
+
+#Understanding dataset structure
+
+nrow(roach_wide)
+#6942 rows
+ncol(roach_wide)
+#24 columns
+colnames(roach_wide)
+#fish counts of interest stored in columns c_hab, c_ps, c_open, c_both. c_open further counted by c_open_cent, c_open_screen, c_open_hab depending on position in open water
+glimpse(roach_wide)
+#data frame status
+roach_wide_status<- df_status(roach_wide, print_results = F)
+
+#Convert necessary variables to factors and add level labels before proceeding
+##1.2  Factors and labels ####
 # Create a lookup table for variable labels
 labels_table <- list(
   treatment = c('Covered (B)','Uncovered (A)'),
@@ -49,12 +62,27 @@ for (var in names(labels_table)) {
 other_vars <- c("hours_havail", "hours_lout", "run", "day", "trial")
 roach_wide[other_vars] <- lapply(roach_wide[other_vars], as.factor)
 
-#3 GLMM ####
-##3.1 Data preparation ####
+##1.3 NA, 0, outliers, normality ####
 
-#Extract hour from time variable and store as factor for random effect modelling
-roach_wide <- roach_wide %>%
-  mutate(time_factor = factor(as.numeric(format(strptime(time, format = "%H:%M:%S"), "%H"))))
+#check NAs - 3516 present in hours_havail, 2334 in hours_lout
+#Variables not considered in main analysis, NAs can be omitted later if required
+
+#examine spread of zero counts in habitat variables
+roach_wide_status %>%
+  filter(variable %in% c("c_hab", "c_ps", "c_open", "c_open_cent", "c_open_screen", "c_open_hab")) %>%
+  arrange(-p_zeros) %>%
+  select(variable, q_zeros, p_zeros)
+#high proportion of 0's in all counts, but will be confounded without consideration for light period and habitat availability
+
+#outliers
+plot_outlier(roach_wide)
+#outliers not present
+
+#normality
+roach_wide%>% plot_normality(c_hab,c_ps,c_open)
+#Response variables are not-normal, expected for count data. Transformation will not achieve normality.
+
+##1.4 Rescale counts ####
 
 #standardise raw count data to scale of 0 - 1
 #across function looks at each habitat count variable, divides them by the max value, returns new variable
@@ -62,6 +90,226 @@ roach_wide <- roach_wide %>%
 roach_wide <- roach_wide %>%
   mutate(across(c(c_hab, c_ps, c_open), ~ . / max(.), .names = "{.col}_normalized"),
          across(ends_with("_normalized"), ~ ifelse(. == 0, . + 0.0000000001, .)))
+
+##1.5 Summarise ####
+
+#create minimal data set
+roach_wide_sum = select(roach_wide, c_hab, c_ps, c_open, c_hab_normalized, c_ps_normalized, c_open_normalized, sequence, light, treatment)
+
+#basic summary function
+summary(roach_wide_sum)
+
+#Expanded summary including SD, skew and kurtosis
+profiling_num(roach_wide_sum)
+#SD of c_ps and c_hab is relatively high. Suggests data points are spread across wide range of points.
+#skewness >0 = right, <0 = left, 0 = symmetric.
+#kurtosis >3 = sharp, <3 = flat, 3 = normal
+
+
+#Sum of counts in each habitat by light period and sequence
+roach_wide_sum %>%
+  group_by(light) %>%
+  summarise(sum_c_hab = sum(c_hab),
+            sum_c_ps = sum(c_ps),
+            sum_c_open = sum(c_open)) %>%
+  mutate(variable = "Light") %>%
+  bind_rows(roach_wide_sum %>% group_by(sequence) %>%
+              summarise(sum_c_hab = sum(c_hab),
+                        sum_c_ps = sum(c_ps),
+                        sum_c_open = sum(c_open)) %>%
+              mutate(variable = "Sequence"))%>%
+  bind_rows(roach_wide_sum %>%
+            summarise(sum_c_hab = sum(c_hab),
+                      sum_c_ps = sum(c_ps),
+                      sum_c_open = sum(c_open)) %>%
+            mutate(variable = "Total"))
+
+#mean of habitat occupancy in each habitat by light period and sequence
+roach_wide_sum %>%
+  group_by(light) %>%
+  summarise(mean_c_hab = mean(c_hab_normalized),
+            mean_c_ps = mean(c_ps_normalized),
+            mean_c_open = mean(c_open_normalized)) %>%
+  mutate(variable = "Light") %>%
+  bind_rows(roach_wide_sum %>% group_by(sequence) %>%
+              summarise(mean_c_hab = mean(c_hab_normalized),
+                        mean_c_ps = mean(c_ps_normalized),
+                        mean_c_open = mean(c_open_normalized)) %>%
+              mutate(variable = "Sequence"))
+
+#2 Visualise relationships ####
+
+#Raw count data
+ggplot(roach_wide_sum, aes(x = sequence, y= c_ps)) +
+  geom_boxplot()
+
+ggplot(roach_wide_sum, aes(x = sequence, y= c_hab)) +
+  geom_boxplot()
+
+ggplot(roach_wide_sum, aes(x = sequence, y= c_open)) +
+  geom_boxplot()
+
+#Visualise rescaled habitat occupancy data
+
+#Artificial habitat,light
+ggplot(roach_wide_sum %>% filter(sequence!="Baseline")%>%
+         group_by(light) %>%
+         summarise(mean_c_hab = mean(c_hab_normalized),
+                   se_c_hab = sd(c_hab_normalized) / sqrt(n())),
+       aes(x = light, y = mean_c_hab)) +
+  geom_point(size = 3) +
+  geom_errorbar(aes(ymin = mean_c_hab - se_c_hab, ymax = mean_c_hab + se_c_hab),
+                width = 0.2)
+
+#pumping station, light
+ggplot(roach_wide_sum %>% filter(sequence!="I 2")%>%
+         group_by(light) %>%
+         summarise(mean_c_hab = mean(c_ps_normalized),
+                   se_c_hab = sd(c_ps_normalized) / sqrt(n())),
+       aes(x = light, y = mean_c_hab)) +
+  geom_point(size = 3) +
+  geom_errorbar(aes(ymin = mean_c_hab - se_c_hab, ymax = mean_c_hab + se_c_hab),
+                width = 0.2)
+
+#open water, slight
+ggplot(roach_wide_sum %>%
+         group_by(light) %>%
+         summarise(mean_c_hab = mean(c_open_normalized),
+                   se_c_hab = sd(c_open_normalized) / sqrt(n())),
+       aes(x = light, y = mean_c_hab)) +
+  geom_point(size = 3) +
+  geom_errorbar(aes(ymin = mean_c_hab - se_c_hab, ymax = mean_c_hab + se_c_hab),
+                width = 0.2)
+
+
+####
+
+
+#Artificial habitat, sequence, light
+ggplot(roach_wide_sum %>% filter(sequence!="Baseline")%>%
+         group_by(sequence, light) %>%
+         summarise(mean_c_hab = mean(c_hab_normalized),
+                   se_c_hab = sd(c_hab_normalized) / sqrt(n())),
+       aes(x = sequence, y = mean_c_hab, colour = light)) +
+  geom_point(size = 3) +
+  geom_errorbar(aes(ymin = mean_c_hab - se_c_hab, ymax = mean_c_hab + se_c_hab),
+                width = 0.2)
+
+#pumping station, sequence, light
+ggplot(roach_wide_sum %>% filter(sequence!="I 2")%>%
+         group_by(sequence, light) %>%
+         summarise(mean_c_hab = mean(c_ps_normalized),
+                   se_c_hab = sd(c_ps_normalized) / sqrt(n())),
+       aes(x = sequence, y = mean_c_hab, colour = light)) +
+  geom_point(size = 3) +
+  geom_errorbar(aes(ymin = mean_c_hab - se_c_hab, ymax = mean_c_hab + se_c_hab),
+                width = 0.2)
+
+#open water, sequence, light
+ggplot(roach_wide_sum %>%
+         group_by(sequence, light) %>%
+         summarise(mean_c_hab = mean(c_open_normalized),
+                   se_c_hab = sd(c_open_normalized) / sqrt(n())),
+       aes(x = sequence, y = mean_c_hab, colour = light)) +
+  geom_point(size = 3) +
+  geom_errorbar(aes(ymin = mean_c_hab - se_c_hab, ymax = mean_c_hab + se_c_hab),
+                width = 0.2)
+
+####
+
+#Artificial habitat, sequence, treatment
+ggplot(roach_wide_sum %>% filter(sequence!="Baseline")%>%
+         group_by(sequence, treatment) %>%
+         summarise(mean_c_hab = mean(c_hab_normalized),
+                   se_c_hab = sd(c_hab_normalized) / sqrt(n())),
+       aes(x = sequence, y = mean_c_hab, colour = treatment)) +
+  geom_point(size = 3) +
+  geom_errorbar(aes(ymin = mean_c_hab - se_c_hab, ymax = mean_c_hab + se_c_hab),
+                width = 0.2)
+
+#pumping station, sequence, treatment
+ggplot(roach_wide_sum %>% filter(sequence!="I 2")%>%
+         group_by(sequence, treatment) %>%
+         summarise(mean_c_hab = mean(c_ps_normalized),
+                   se_c_hab = sd(c_ps_normalized) / sqrt(n())),
+       aes(x = sequence, y = mean_c_hab, colour = treatment)) +
+  geom_point(size = 3) +
+  geom_errorbar(aes(ymin = mean_c_hab - se_c_hab, ymax = mean_c_hab + se_c_hab),
+                width = 0.2)
+
+#open water, sequence, treatment
+ggplot(roach_wide_sum %>%
+         group_by(sequence, treatment) %>%
+         summarise(mean_c_hab = mean(c_open_normalized),
+                   se_c_hab = sd(c_open_normalized) / sqrt(n())),
+       aes(x = sequence, y = mean_c_hab, colour = treatment)) +
+  geom_point(size = 3) +
+  geom_errorbar(aes(ymin = mean_c_hab - se_c_hab, ymax = mean_c_hab + se_c_hab),
+                width = 0.2)
+
+####
+
+#Artificial habitat, treatment, light
+ggplot(roach_wide_sum %>% filter(sequence!="Baseline")%>%
+         group_by(treatment, light) %>%
+         summarise(mean_c_hab = mean(c_hab_normalized),
+                   se_c_hab = sd(c_hab_normalized) / sqrt(n())),
+       aes(x = treatment, y = mean_c_hab, colour = light)) +
+  geom_point(size = 3) +
+  geom_errorbar(aes(ymin = mean_c_hab - se_c_hab, ymax = mean_c_hab + se_c_hab),
+                width = 0.2)
+
+#pumping station, treatment, light
+ggplot(roach_wide_sum %>% filter(sequence!="I 2")%>%
+         group_by(treatment, light) %>%
+         summarise(mean_c_hab = mean(c_ps_normalized),
+                   se_c_hab = sd(c_ps_normalized) / sqrt(n())),
+       aes(x = treatment, y = mean_c_hab, colour = light)) +
+  geom_point(size = 3) +
+  geom_errorbar(aes(ymin = mean_c_hab - se_c_hab, ymax = mean_c_hab + se_c_hab),
+                width = 0.2)
+
+#open water, treatment, light
+ggplot(roach_wide_sum %>%
+         group_by(treatment, light) %>%
+         summarise(mean_c_hab = mean(c_open_normalized),
+                   se_c_hab = sd(c_open_normalized) / sqrt(n())),
+       aes(x = treatment, y = mean_c_hab, colour = light)) +
+  geom_point(size = 3) +
+  geom_errorbar(aes(ymin = mean_c_hab - se_c_hab, ymax = mean_c_hab + se_c_hab),
+                width = 0.2)
+
+
+#Artificial habitat, treatment, daytime
+ggplot(roach_wide_sum %>% filter(sequence!="Baseline")%>% filter(light=="Day")%>%
+         group_by(treatment, light) %>%
+         summarise(mean_c_hab = mean(c_hab_normalized),
+                   se_c_hab = sd(c_hab_normalized) / sqrt(n())),
+       aes(x = treatment, y = mean_c_hab, colour = light)) +
+  geom_point(size = 3) +
+  geom_errorbar(aes(ymin = mean_c_hab - se_c_hab, ymax = mean_c_hab + se_c_hab),
+                width = 0.2)
+
+#Artificial habitat, sequence, treatment (daytime)
+ggplot(roach_wide_sum %>% filter(sequence!="Baseline")%>% filter(light=="Day")%>%
+         group_by(sequence, treatment) %>%
+         summarise(mean_c_hab = mean(c_hab_normalized),
+                   se_c_hab = sd(c_hab_normalized) / sqrt(n())),
+       aes(x = sequence, y = mean_c_hab, colour = treatment)) +
+  geom_point(size = 3) +
+  geom_errorbar(aes(ymin = mean_c_hab - se_c_hab, ymax = mean_c_hab + se_c_hab),
+                width = 0.2)
+
+
+
+
+
+#3 GLMM ####
+##3.1 Data preparation ####
+
+#Extract hour from time variable and store as factor for random effect modelling
+roach_wide <- roach_wide %>%
+  mutate(time_factor = factor(as.numeric(format(strptime(time, format = "%H:%M:%S"), "%H"))))
 
 #Create new DF for binary model
 roach_binary <- roach_wide %>%filter (sequence=="I 1"|sequence=="I 3")%>%filter(light=="Day")
@@ -337,11 +585,6 @@ ggsave(filename="hab_prob_plot2.svg", plot=hab_prob_plot,device = "svg",units="c
 
 #4 Statistical analysis ####
 
-#Sum of counts in each habitat
-roach_wide %>%
-  summarize(sum_c_hab = sum(c_hab),
-            sum_c_ps = sum(c_ps),
-            sum_c_open = sum(c_open))
 
 
 #Effect of experimental sequence on habitat occupancy
@@ -378,6 +621,9 @@ i1_base_ps<- roach_wide %>%
 
 t.test(c_ps_normalized ~ sequence,data=i1_base_ps, paired = TRUE)
 
+#Create new DF for paired comparison between intervention 1 and intervention 2 artificial habitat occupancy
+#Remove 42 rows at random from baseline category to allow for paired comparison
+
 i1_i2_hab<- roach_wide %>%
   filter(sequence %in% c("I 1", "I 2") & light == "Day") %>%
   group_by(sequence) %>%
@@ -385,3 +631,50 @@ i1_i2_hab<- roach_wide %>%
   ungroup()
 
 t.test(c_hab_normalized ~ sequence,data=i1_i2_hab, paired = TRUE)
+
+i1_i3_ps <- roach_wide %>%
+  filter(sequence %in% c("I 1", "I 3") & light == "Day") %>%
+  group_by(sequence) %>%
+  filter(!(sequence == "I 1" & row_number() > 630)) %>%
+  ungroup()
+
+t.test(c_ps_normalized ~ sequence,data=i1_i3_ps, paired = TRUE)
+
+i2_i3_hab<- roach_wide %>%
+  filter(sequence %in% c("I 2", "I 3") & light == "Day") %>%
+  group_by(sequence) %>%
+  filter(!(sequence == "I 2" & row_number() > 630)) %>%
+  ungroup()
+
+table(i2_i3_hab$sequence)
+
+t.test(c_hab_normalized ~ sequence,data=i2_i3_hab, paired = TRUE)
+
+i1_i3_hab<- roach_wide %>%
+  filter(sequence %in% c("I 1", "I 3") & light == "Day") %>%
+  group_by(sequence) %>%
+  filter(!(sequence == "I 1" & row_number() > 630)) %>%
+  ungroup()
+
+table(i1_i3_hab$sequence)
+
+t.test(c_hab_normalized ~ sequence,data=i1_i3_hab, paired = TRUE)
+
+treatment_hab<- roach_wide %>%
+  filter(sequence %in% c("I 1","I 2", "I 3") & light == "Day") %>%
+  group_by(sequence) %>%
+  filter(!(sequence %in% c("I 1", "I 2") & row_number() > 630)) %>%
+  ungroup()
+
+table(treatment_hab$sequence)
+t.test(c_hab_normalized ~ treatment,data=treatment_hab, paired = TRUE)
+
+treatment_ps<- roach_wide %>%
+  filter(sequence %in% c("Baseline", "I 1", "I 3") & light == "Day") %>%
+  group_by(sequence) %>%
+  filter(!(sequence %in% c("Baseline", "I 1") & row_number() > 630)) %>%
+  ungroup()
+table(treatment_ps$sequence)
+
+t.test(c_ps_normalized ~ treatment,data=treatment_ps, paired = TRUE)
+
