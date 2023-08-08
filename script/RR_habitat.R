@@ -132,7 +132,7 @@ roach_wide_sum %>%
                         mean_c_open = mean(c_open_normalized)) %>%
               mutate(variable = "Sequence"))
 
-#2 Visualise relationships ####
+#2 Visualise main relationships ####
 
 #Raw count data
 ggplot(roach_wide_sum, aes(x = sequence, y= c_ps)) +
@@ -355,6 +355,48 @@ ggplot(roach_wide %>% filter(sequence!="Baseline")%>%
 
 #Some evidence for temporal correlation but captured by variation in sequence
 
+##2.1 Extra considerations ####
+
+#When AH is introduced, does time available correlate with occupancy?
+
+ggplot(roach_wide %>%
+         filter(!is.na(hours_havail))%>% filter(sequence =="I 1")%>%
+         group_by(hours_havail) %>%
+         summarise(mean_c_hab = mean(c_hab_normalized),
+                   se_c_hab = sd(c_hab_normalized) / sqrt(n())),
+       aes(x = hours_havail, y = mean_c_hab)) +
+  geom_point(size = 3) +
+  geom_errorbar(aes(ymin = mean_c_hab - se_c_hab, ymax = mean_c_hab + se_c_hab),
+                width = 0.2)
+
+roach_wide %>%
+  filter(!is.na(hours_havail)) %>%
+  filter(sequence == "I 1") %>%
+  mutate(hours = as.numeric(hours_havail)) %>%
+  with(cor.test(hours, c_hab_normalized))
+
+#No real relationship. Occupancy peaks 24h after introduction, as expected due to nocturnal behaviour.
+#Weak positive correlation, but significant. cor = 0.11 p = <0.001
+
+#When lights turn out, how long until open water occupancy peaks?
+
+ggplot(roach_wide %>%
+         filter(!is.na(hours_lout))%>%
+         group_by(hours_lout) %>%
+         summarise(mean_c_hab = mean(c_open_normalized),
+                   se_c_hab = sd(c_open_normalized) / sqrt(n())),
+       aes(x = hours_lout, y = mean_c_hab)) +
+  geom_point(size = 3) +
+  geom_errorbar(aes(ymin = mean_c_hab - se_c_hab, ymax = mean_c_hab + se_c_hab),
+                width = 0.2)
+
+roach_wide %>%
+  filter(!is.na(hours_lout)) %>%
+  mutate(hours = as.numeric(hours_lout)) %>%
+  with(cor.test(hours, c_open_normalized))
+
+#No real relationship. Occupancy peaks within 1h of lights out.
+#Weak positive correlation due to hour 0 - 1. cor = 0.13 p = <0.001.
 
 #3 GLMM ####
 ##3.1 Data preparation ####
@@ -374,6 +416,7 @@ roach_binary$binary <- ifelse(roach_binary$sequence =="I 1", 0,1)
 #continuous non-negative response variable with zero values treated by adding 0.000000001
 #Left-skewed, Gamma not used.
 #-Gaussian distribution. Apply log-link to account for uneven variance in sequence groups.
+#-Raw counts would be overdispersed, treated by rescaling.
 # No NAs
 # No outliers
 # Non-normally distributed response variable, but large sample size
