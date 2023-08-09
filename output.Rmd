@@ -1,0 +1,193 @@
+---
+title: "REC-22-436_REST_ECO_MANUSCRIPT_REV1 Analysis report"
+author: "Josh Norman"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE,
+                      warning = FALSE,
+                      dev = "png")
+```
+
+This is a self-contained data analysis report for REC-22-436_REST_ECO_MANUSCRIPT_REV1.
+
+##### Required libraries
+
+```{r, message=FALSE}
+library(tidyverse)
+library(knitr)
+library(kableExtra)
+library(funModeling)
+library(dlookr)
+library(glmmTMB)
+library(ggeffects)
+library(DHARMa)
+library(ggpubr)
+```
+
+# 1. Load & prepare data
+
+roach_wide.csv - wide data set where fish counts are stored in columns c_hab, c_open, c_ps
+
+```{r, message=FALSE}
+roach_wide=read_csv("./data/roach_wide.csv")
+```
+
+## 1.1 Data discovery
+
+Determine dataset structure by checking number of rows, columns and data types (i.e., numerical, factors). Identify categorical factors and their levels.
+
+```{r}
+nrow(roach_wide)
+ncol(roach_wide)
+colnames(roach_wide)
+```
+
+funModeling:df_status - For each variable it returns: Quantity and percentage of zeros (q_zeros and p_zeros respectively). Same metrics for NA values (q_NA/p_na), and infinite values (q_inf/p_inf). Last two columns indicates data type and quantity of unique values.
+
+```{r}
+roach_wide_status<- funModeling::df_status(roach_wide, print_results = F)
+```
+
+```{r, echo=FALSE}
+kbl(roach_wide_status)%>%
+  kable_styling(full_width = FALSE, bootstrap_options = c("striped", "hover", "condensed"))
+```
+
+Several variables need to be converted to factors and labels added to levels.
+
+### 1.1.1 Set factors and add labels
+
+Create a lookup table for variable labels.
+
+```{r}
+labels_table <- list(
+  treatment = c('Covered (B)','Uncovered (A)'),
+  ps_tank_end = c('RH', 'LH'),
+  room_end = c('Far', 'Near'),
+  light = c('Day', 'Night'),
+  hab_avail = c('AH unavailable', 'AH available'),
+  ps_avail = c('PS available','PS unavailable'),
+  both_avail = c('Single Available', 'Both Available'),
+  sequence = c('Baseline', 'I 1', 'I 2', 'I 3')
+)
+```
+
+Convert variables to factors with specific labeling using a loop. Use the lookup table to get the labels for each variable.
+
+```{r}
+for (var in names(labels_table)) {
+  levels <- unique(roach_wide[[var]])
+  labels <- labels_table[[var]]
+  roach_wide[[var]] <- factor(roach_wide[[var]], levels = levels, labels = labels)
+}
+```
+
+Convert other variables to factors without adding labels.
+
+```{r}
+other_vars <- c("hours_havail", "hours_lout", "run", "day", "trial")
+roach_wide[other_vars] <- lapply(roach_wide[other_vars], as.factor)
+```
+
+## 1.2 Data diagnosis
+
+### 1.2.1 NAs
+
+Using the roach_wide_status dataframe consider variables with NA values.
+
+```{r}
+roach_na <- roach_wide_status %>%
+  filter(q_na > 0) %>%
+  arrange(-p_na) %>%
+  select(variable, q_na, p_na)
+```
+
+```{r, echo=FALSE}
+kbl(roach_na)%>%
+  kable_styling(full_width = FALSE, bootstrap_options = c("striped", "hover", "condensed"))
+```
+
+Variables with NA not considered in main analysis, NAs can be omitted for visual analysis.
+
+### 1.2.2 0's
+
+Using the roach_wide_status dataframe consider the spread of zeros in habitat count variables
+
+```{r}
+roach_0 <- roach_wide_status %>%
+  filter(variable %in% c("c_hab", "c_ps", "c_open", "c_open_cent", "c_open_screen", "c_open_hab")) %>%
+  arrange(-p_zeros) %>%
+  select(variable, q_zeros, p_zeros)
+```
+
+```{r, echo=FALSE}
+kbl(roach_0)%>%
+  kable_styling(full_width = FALSE, bootstrap_options = c("striped", "hover", "condensed"))
+```
+
+High proportion of 0's in all counts, but will be confounded without consideration for light period and habitat availability. Regardless, the presence of high 0's will significantly skew variability and make raw counts hard to interpret. Descriptive statistics would be limited by high IQR and misleading min/max values. Consider rescaling count variables for analysis.
+
+### 1.2.3 Outliers
+
+Check the main dataframe for outliers.
+
+dlookr::plot_outlier - for each variable specified the function plots outlier information for numerical data diagnosis
+
+```{r}
+dlookr::plot_outlier(roach_wide, "c_hab", "c_ps", "c_open")
+```
+
+### 1.2.4 Normality
+
+Check the main dataframe for data distribution.
+
+dlookr::plot_normality - for each variable specified the function determines normality by plotting histogram and q-q plot of the original data, log transformed, and square root transformed.
+
+```{r}
+dlookr::plot_normality(roach_wide, "c_hab", "c_ps", "c_open")
+```
+
+## 1.3 Rescale count data
+
+The code performs a two-step transformation: it first normalizes raw fish count data to a 0-1 scale, and then ensures that the normalized values have a small positive offset to prevent division by zero issues for modelling.
+
+```{r}
+roach_wide <- roach_wide %>%
+  mutate(across(c(c_hab, c_ps, c_open), ~ . / max(.), .names = "{.col}_normalized"),
+         across(ends_with("_normalized"), ~ ifelse(. == 0, . + 0.0000000001, .)))
+```
+
+## 1.4 Summarise
+
+First, create minimal dataset with variables of interest.
+
+```{r}
+roach_wide_sum = select(roach_wide, c_hab, c_ps, c_open, c_hab_normalized, c_ps_normalized, c_open_normalized, sequence, light, treatment)
+```
+
+funModeling::profile_num - Provides an expanded summary including mean, standard deviation, skewness and kurtosis. 
+
+Skewness >0 = right-skew, <0 = left-skew, 0 = symmetric.
+kurtosis >3 = sharp, <3 = flat, 3 = normal
+
+```{r}
+numeric_prof <-funModeling::profiling_num(roach_wide_sum)
+```
+
+```{r, echo=FALSE}
+kbl(numeric_prof)%>%
+  kable_styling(full_width = FALSE, bootstrap_options = c("striped", "hover", "condensed"))
+```
+
+Standard deviations of raw counts are high, as expected from normality plots.
+
+
+
+
+
+
