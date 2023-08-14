@@ -102,22 +102,25 @@ profiling_num(roach_wide_sum)
 
 
 #Sum of counts in each habitat by light period and sequence
-roach_wide_sum %>%
-  group_by(light) %>%
-  summarise(sum_c_hab = sum(c_hab),
-            sum_c_ps = sum(c_ps),
-            sum_c_open = sum(c_open)) %>%
-  mutate(variable = "Light") %>%
-  bind_rows(roach_wide_sum %>% group_by(sequence) %>%
-              summarise(sum_c_hab = sum(c_hab),
-                        sum_c_ps = sum(c_ps),
-                        sum_c_open = sum(c_open)) %>%
-              mutate(variable = "Sequence"))%>%
-  bind_rows(roach_wide_sum %>%
-            summarise(sum_c_hab = sum(c_hab),
-                      sum_c_ps = sum(c_ps),
-                      sum_c_open = sum(c_open)) %>%
-            mutate(variable = "Total"))
+bind_rows(
+  roach_wide_sum %>%
+    group_by(light) %>%
+    summarise(sum_c_hab = sum(c_hab),
+              sum_c_ps = sum(c_ps),
+              sum_c_open = sum(c_open)) %>%
+    rename(variable = light),
+  roach_wide_sum %>%
+    group_by(sequence) %>%
+    summarise(sum_c_hab = sum(c_hab),
+              sum_c_ps = sum(c_ps),
+              sum_c_open = sum(c_open)) %>%
+    rename(variable = sequence),
+  roach_wide_sum %>%
+    summarise(sum_c_hab = sum(c_hab),
+              sum_c_ps = sum(c_ps),
+              sum_c_open = sum(c_open),
+              variable = "Total") %>%
+    mutate(variable = factor(variable)))
 
 #mean of habitat occupancy in each habitat by light period and sequence
 roach_wide_sum %>%
