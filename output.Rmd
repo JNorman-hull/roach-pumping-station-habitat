@@ -186,6 +186,11 @@ kbl(numeric_prof)%>%
 
 Standard deviations of raw counts are high, as expected from normality plots.
 
+```{r}
+
+```
+
+
 
 
 
