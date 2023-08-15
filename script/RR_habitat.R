@@ -719,25 +719,34 @@ roach_wide %>%
             mean_c_open = mean(c_open_normalized),
             se_c_open = sd(c_open_normalized) / sqrt(n()))
 
-#Create new DF for paired comparison between baseline and intervention 1 pumping station occupancy
-#Remove 42 rows from baseline category to allow for paired comparison
+#Check level lengths and use min length for comparisons
+table(roach_wide %>%
+        filter(light == "Day") %>%
+        .$sequence)
 
-i1_base_ps<- roach_wide %>%
-  filter(sequence %in% c("Baseline", "I 1") & light == "Day") %>%
+#Create new DF for paired comparison between baseline and intervention 1 pumping station occupancy
+
+i1_base_ps<-  roach_wide %>%
+  filter(light == "Day" & sequence %in% c("Baseline", "I 1")) %>%
   group_by(sequence) %>%
-  group_modify(~ slice(., sample(seq_len(n()), size = min_count$min_count))) %>%
-  ungroup()
+  mutate(row_num = row_number()) %>%
+  filter(row_num <= 630) %>%
+  ungroup() %>%
+  select(-row_num)
 
 t.test(c_ps_normalized ~ sequence,data=i1_base_ps, paired = TRUE)
 
 #Create new DF for paired comparison between intervention 1 and intervention 2 artificial habitat occupancy
 #Remove rows from sequence category to allow for paired comparison
 
+
 i1_i2_hab<- roach_wide %>%
-  filter(sequence %in% c("I 1", "I 2") & light == "Day") %>%
+  filter(light == "Day" & sequence %in% c("I 1", "I 2")) %>%
   group_by(sequence) %>%
-  group_modify(~ slice(., sample(seq_len(n()), size = min_count$min_count))) %>%
-  ungroup()
+  mutate(row_num = row_number()) %>%
+  filter(row_num <= 630) %>%
+  ungroup() %>%
+  select(-row_num)
 
 t.test(c_hab_normalized ~ sequence,data=i1_i2_hab, paired = TRUE)
 
@@ -763,7 +772,7 @@ i2_i3_hab<- roach_wide %>%
 
 t.test(c_hab_normalized ~ sequence,data=i2_i3_hab, paired = TRUE)
 
-#Create new DF for paired comparison between intervention 2 and intervention 3 artificial habitat occupancy
+#Create new DF for paired comparison between intervention 1 and intervention 3 artificial habitat occupancy
 #Remove rows from sequence category to allow for paired comparison. Match 630 rows of I 2
 
 i1_i3_hab<- roach_wide %>%
