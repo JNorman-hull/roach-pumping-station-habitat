@@ -16,18 +16,17 @@ knitr::opts_chunk$set(echo = TRUE,
 
 This is a self-contained data analysis report.
 
-The main hypothesis of this study were evaluated in consideration of daytime pumping station and artificial habitat use, which were 
+The main hypothesis of this study were evaluated in consideration of daytime pumping station and artificial habitat use, which were
 
-1. Roach will occupy pumping station when artificial habitat is absent
+1.  Roach will occupy pumping station when artificial habitat is absent
 
-2. When introduced (pre-exclusion), roach will show equal preference towards artificial habitat and pumping station 
+2.  When artificial habitat is introduced (pre-exclusion), roach will prefer the pumping station 
 
-3. When excluded from the pumping station, artificial habitat occupancy will increase
+3.  When excluded from the pumping station, artificial habitat occupancy will increase
 
-4. Roach will show a preferential change (compared to pre-exclusion) to occupying artificial habitat when the pumping station is reintroduced (post-exclusion)
+4.  Roach will show a preferential change (compared to pre-exclusion) to occupying artificial habitat when the pumping station is reintroduced (post-exclusion)
 
-5. Artificial habitat occupancy will be higher in sheltered (vs unsheltered) treatments
-
+5.  Artificial habitat occupancy will be higher in sheltered (vs unsheltered) treatments
 
 ##### Required libraries
 
@@ -37,6 +36,7 @@ library(knitr)
 library(kableExtra)
 library(funModeling)
 library(dlookr)
+library(shiny)
 library(glmmTMB)
 library(ggeffects)
 library(DHARMa)
@@ -81,12 +81,7 @@ Create a lookup table for variable labels.
 ```{r}
 labels_table <- list(
   treatment = c('Covered (B)','Uncovered (A)'),
-  ps_tank_end = c('RH', 'LH'),
-  room_end = c('Far', 'Near'),
   light = c('Day', 'Night'),
-  hab_avail = c('AH unavailable', 'AH available'),
-  ps_avail = c('PS available','PS unavailable'),
-  both_avail = c('Single Available', 'Both Available'),
   sequence = c('Baseline', 'I 1', 'I 2', 'I 3')
 )
 ```
@@ -104,7 +99,7 @@ for (var in names(labels_table)) {
 Convert other variables to factors without adding labels.
 
 ```{r}
-other_vars <- c("hours_havail", "hours_lout", "run", "day", "trial")
+other_vars <- c("hours_havail", "hours_lout", "day", "trial")
 roach_wide[other_vars] <- lapply(roach_wide[other_vars], as.factor)
 ```
 
@@ -184,10 +179,9 @@ First, create minimal dataset with variables of interest.
 roach_wide_sum = select(roach_wide, c_hab, c_ps, c_open, c_hab_normalized, c_ps_normalized, c_open_normalized, sequence, light, treatment)
 ```
 
-funModeling::profile_num - Provides an expanded summary including mean, standard deviation, skewness and kurtosis. 
+funModeling::profile_num - Provides an expanded summary including mean, standard deviation, skewness and kurtosis.
 
-Skewness >0 = right-skew, <0 = left-skew, 0 = symmetric.
-kurtosis >3 = sharp, <3 = flat, 3 = normal
+Skewness \>0 = right-skew, \<0 = left-skew, 0 = symmetric. kurtosis \>3 = sharp, \<3 = flat, 3 = normal
 
 ```{r}
 numeric_prof <-funModeling::profiling_num(roach_wide_sum)
@@ -198,7 +192,6 @@ kbl(numeric_prof)%>%
   kable_styling(bootstrap_options = c("striped", "hover", "condensed"))%>%
   scroll_box(width = "100%")
 ```
-
 
 Standard deviations of raw counts are high, as expected from normality plots.
 
@@ -226,7 +219,6 @@ count_sum <- bind_rows(
     mutate(variable = factor(variable)))
 ```
 
-
 ```{r echo=FALSE}
 kbl(count_sum)%>%
   kable_styling(full_width = FALSE,bootstrap_options = c("striped", "hover", "condensed"))%>%
@@ -237,7 +229,6 @@ kbl(count_sum)%>%
 ```
 
 Examine rescaled counts
-
 
 ```{r}
 rescaled_mean <- bind_rows(
@@ -261,7 +252,6 @@ rescaled_mean <- bind_rows(
     rename(variable = treatment))
 ```
 
-
 ```{r echo=FALSE}
 kbl(rescaled_mean)%>%
   kable_styling(full_width = FALSE,bootstrap_options = c("striped", "hover", "condensed"))%>%
@@ -270,7 +260,6 @@ kbl(rescaled_mean)%>%
   pack_rows("Treatment (daytime)",7,8)
 
 ```
-
 
 # 2 Visualise main relationships
 
@@ -293,7 +282,6 @@ theme_JN <- function(base_size=12){
 }
 ```
 
-
 Plot raw count data first to confirm suitability of rescaling data.
 
 ```{r, fig.height=4, fig.width=6, out.width="70%"}
@@ -311,7 +299,6 @@ ggplot(roach_wide_sum, aes(x = sequence, y= c_open)) +
 The boxplots confirm raw count data are unsuitable for analysis due to large variation in counts presenting large IQR + outliers. Descriptive data e.g., medians are therefore hard to interpret and generalise.
 
 From here on all analysis considers rescaled counts.
-
 
 ```{r, fig.height=4, fig.width=6, out.width="70%", message=FALSE}
 #Artificial habitat,light
@@ -376,15 +363,14 @@ ggplot(roach_wide_sum %>%
 
 ```
 
-
 By plotting the main visual relationships we're able to quickly identify relationships in the data and begin addressing study objectives and hypothesis.
 
 Here, we can consider that the day/night relationship in habitat occupancy was relatively fixed throughout the experiment in all habitat options. We see that open water occupancy was decreased in intervention 1, possibly attributed to introducing artificial habitat.
 
-1. H1 was supported, fish occupied the pumping station during the day
-2. H2 was partially supported, there was no equal preference but high variation in fish behavior
-3. H3 supported, habitat occupancy increased in artificial habitat when excluded from pumping station
-4. H4 supported, habitat occupancy was highest in artificial habitat post-exclusion. Preferential change demonstrated
+1.  H1 was supported, fish occupied the pumping station during the day
+2.  H2 was partially supported, there was no equal preference but high variation in fish behavior
+3.  H3 supported, habitat occupancy increased in artificial habitat when excluded from pumping station
+4.  H4 supported, habitat occupancy was highest in artificial habitat post-exclusion. Preferential change demonstrated
 
 To consider H5, let's examine treatment effects.
 
@@ -471,7 +457,7 @@ ggplot(roach_wide_sum %>% filter(sequence!="Baseline")%>% filter(light=="Day")%>
                 width = 0.2)+theme_JN()+theme(text=element_text(size=20))
 ```
 
-In these plots we see that treatment has an impact on habitat occupancy and in all sequences, habitat occupancy in artificial habitat was highest in uncovered treatments.Interestingly, occupancy in pumping station shows the opposite relationship to artificial habitat. Pumping station occupancy was highest in uncovered treatments, suggesting that cover is important i.e., when uncovered habitat is provided, more fish occupy the pumping station. Overall, we found support for H5.   
+In these plots we see that treatment has an impact on habitat occupancy and in all sequences, habitat occupancy in artificial habitat was highest in uncovered treatments.Interestingly, occupancy in pumping station shows the opposite relationship to artificial habitat. Pumping station occupancy was highest in uncovered treatments, suggesting that cover is important i.e., when uncovered habitat is provided, more fish occupy the pumping station. Overall, we found support for H5.
 
 Before continuing with statistical analysis let's examine repeated measures and temporal effects.
 
@@ -543,26 +529,26 @@ roach_wide %>%
 
 Again, no strong relationship. Occupancy peaks within 1h of lights out. Correlation testing shows a weak positive correlation, but significant.
 
-Ordinarily we may now choose to perform group comparisons etc on our variables of interest to support the relationships shown in the visual analysis. However, the nature of the problem is complex and thus is best treated by a modelling approach. 
+Ordinarily we may now choose to perform group comparisons etc on our variables of interest to support the relationships shown in the visual analysis. However, the nature of the problem is complex and thus is best treated by a modelling approach.
 
----
+------------------------------------------------------------------------
 
 # 3 GLMM
 
 Data exploration has shown:
 
-- Continuous non-negative response variable with zero values treated by adding 0.000000001
-- Left-skewed, Gamma distribution undesired
-- Gaussian distribution suitable for continuous response. Apply log-link to account for uneven variance in sequence groups.
-- Raw counts would be overdispersed, treated by rescaling.
-- No NAs
-- No outliers
-- Non-normally distributed response variable, but large sample size
-- No zeros in response
-- No continuous predictors, so no collinearity issues
-- No interactions
-- No Independence of response variables. Repeated measures design requires random effect of trial
-- Temporal dependency should be accounted for with random effects
+-   Continuous non-negative response variable with zero values treated by adding 0.000000001
+-   Left-skewed, Gamma distribution undesired
+-   Gaussian distribution suitable for continuous response. Apply log-link to account for uneven variance in sequence groups.
+-   Raw counts would be overdispersed, treated by rescaling.
+-   No NAs
+-   No outliers
+-   Non-normally distributed response variable, but large sample size
+-   No zeros in response
+-   No continuous predictors, so no collinearity issues
+-   No interactions
+-   No Independence of response variables. Repeated measures design requires random effect of trial
+-   Temporal dependency should be accounted for with random effects
 
 ```{r}
 table(roach_wide$sequence) 
@@ -589,13 +575,13 @@ roach_binary <- roach_wide %>%filter (sequence=="I 1"|sequence=="I 3")%>%filter(
 roach_binary$binary <- ifelse(roach_binary$sequence =="I 1", 0,1)
 ```
 
----
+------------------------------------------------------------------------
 
 ## 3.2 Build GLMM
 
 ### 3.2.1 Artifical habitat
 
-Start by creating a null (intercept only) model. 
+Start by creating a null (intercept only) model.
 
 ```{r}
 mod1 <- glmmTMB(c_hab_normalized ~ 1, data = roach_wide%>%filter(sequence!="Baseline"),
@@ -612,7 +598,7 @@ mod1.1 <- update(mod1, c_hab_normalized ~ sequence + light + treatment)
 summary(mod1.1)
 ```
 
-The model outputs are sensible and have reduced the AIC of the null model from 4939 to 2422.  All our predictor terms are significant with sensible coefficent and error estimates. For example, we can see that the mean value of c_hab_normalized is reduced by -0.623 units during night time light conditions.
+The model outputs are sensible and have reduced the AIC of the null model from 4939 to 2422. All our predictor terms are significant with sensible coefficent and error estimates. For example, we can see that the mean value of c_hab_normalized is reduced by -0.623 units during night time light conditions.
 
 It can be useful to plot model predictions early whilst building a complete model to understand how adding independent variables affects the estimated response.
 
@@ -622,7 +608,7 @@ plot(ggpredict(mod1.1, terms = c("sequence","light")))+theme_JN()+theme(text=ele
 
 Here, we can see that the predicted habitat occupancy response is sensible, and close to the observed values we plotted earlier.
 
-Importantly, random effects need to be added to account for repeated measures and temporal dependency. 
+Importantly, random effects need to be added to account for repeated measures and temporal dependency.
 
 ```{r, fig.height=4, fig.width=6, out.width="70%", message=FALSE}
 mod1.2 <- update(mod1.1, . ~ . + (1 | time_factor/day/trial))
@@ -684,8 +670,7 @@ plot(ggpredict(mod3.2, terms = c("sequence","light")))+theme_JN()+theme(text=ele
 
 ### 3.2.4 Binary probability model
 
-To separately analyse the effect of habitat exclusion on overall probability of fish occupying a given habitat post-exclusion (sequence: I 3) let's build a pair of GLMMs in glmmTMB with binomial distribution (link = logit). In these models, fixed effects are limited to experimental sequence (I 1, I 3) and used the same random effects specified in the main models. 
-
+To separately analyse the effect of habitat exclusion on overall probability of fish occupying a given habitat post-exclusion (sequence: I 3) let's build a pair of GLMMs in glmmTMB with binomial distribution (link = logit). In these models, fixed effects are limited to experimental sequence (I 1, I 3) and used the same random effects specified in the main models.
 
 ```{r}
 mod_binary_ah <- glmmTMB(c_hab_normalized ~ as.factor(binary) + (1 | time_factor/day/trial), data = roach_binary, family = binomial())
@@ -698,7 +683,6 @@ The model predicts a significant increase in the probability of fish occupying a
 plot(ggpredict(mod_binary_ah, terms = c("binary")))+theme_JN()+theme(text=element_text(size=20))
 ```
 
-
 ```{r}
 mod_binary_ps <- glmmTMB(c_ps_normalized ~ as.factor(binary) + (1 | time_factor/day/trial), data = roach_binary, family = binomial())
 summary(mod_binary_ps)
@@ -710,7 +694,7 @@ The model predicts a significant decrease in the probability of fish occupying p
 plot(ggpredict(mod_binary_ps, terms = c("binary")))+theme_JN()+theme(text=element_text(size=20))
 ```
 
----
+------------------------------------------------------------------------
 
 ## 3.3 Save model predictions
 
@@ -747,12 +731,10 @@ modeloutput_df$habitat <- as.factor(modeloutput_df$habitat)
 modeloutput_df$habitat <- factor(modeloutput_df$habitat, levels = c('Pumping station', 'Open water', 'Artificial habitat'))
 ```
 
-
 ```{r echo=FALSE}
 kbl(modeloutput_df)%>%
   kable_styling(bootstrap_options = c("striped", "hover", "condensed"))
 ```
-
 
 A similar process follows for the treatment dataframe.
 
@@ -790,14 +772,14 @@ kbl(habitat_prob_df)%>%
   kable_styling(bootstrap_options = c("striped", "hover", "condensed"))
 ```
 
-
----
+------------------------------------------------------------------------
 
 # 4 Model output figures
 
 The final model outputs can now be plotted. The following figures are finalized versions with some edits made after exporting from R, thus the code snippet will not produce an identical figure.
 
 <br>
+
 ```{r, fig.show='hide'}
 ggplot(data=modeloutput_df, aes(x=x, y=predicted, fill=group))+
   geom_tile(aes(x=x, y=0.5,height = Inf, fill=present), alpha = 0.3,  show.legend = FALSE) + 
@@ -817,11 +799,13 @@ ggplot(data=modeloutput_df, aes(x=x, y=predicted, fill=group))+
   facet_grid(~ habitat, scales = "fixed")+
   geom_text(data = modeloutput_df %>% filter(present == "F"), aes(x = x, y = 0.5, label = "Unavailable"), size = 8/.pt, angle = 90, fontface = "italic")
 ```
-<br>
-
-![Fig 1. Habitat occupancy fitted by Generalised Linear Mixed Models (log-linked Gaussian distributions) across each response variable a) pumping station, b) open water, c) artificial habitat. All models incorporated the random effect of time, day, and trial. Error bars represent 95% confidence intervals. Values fitted by light period, day = dots and dashed lines, night = crosses and dotted lines. Light grey background shading denoted by ’unavailable’ indicates where habitat was not available in the experimental sequence. Models fitted using glmmTMB in R 4.3.1.](./figures/Figure 3.jpg)
 
 <br>
+
+![Fig 1. Habitat occupancy fitted by Generalised Linear Mixed Models (log-linked Gaussian distributions) across each response variable a) pumping station, b) open water, c) artificial habitat. All models incorporated the random effect of time, day, and trial. Error bars represent 95% confidence intervals. Values fitted by light period, day = dots and dashed lines, night = crosses and dotted lines. Light grey background shading denoted by 'unavailable' indicates where habitat was not available in the experimental sequence. Models fitted using glmmTMB in R 4.3.1.](./figures/Figure%203.jpg)
+
+<br>
+
 ```{r, fig.show='hide'}
 ggplot(data=c_hab_glmmm_treat, aes(x=x, y=predicted, fill=group))+
   geom_tile(aes(x=x, y=0.5,height = Inf, fill=present), alpha = 0.3,  show.legend = FALSE) + 
@@ -837,11 +821,13 @@ ggplot(data=c_hab_glmmm_treat, aes(x=x, y=predicted, fill=group))+
   theme(axis.text.x=element_text(size=8)) + 
   geom_text(data = c_hab_glmmm_treat %>% filter(present == "F"), aes(x = x, y = 0.5, label = "Unavailable"), size = 8/.pt, angle = 90, fontface = "italic")
 ```
-<br>
-
-![Fig 2. Daytime artificial habitat occupancy fitted by Generalised Linear Mixed Model (log-linked Gaussian distribution). The model incorporated the random effect of time, day, and trial. Error bars represent 95% confidence intervals. Values fitted by habitat treatment, unsheltered (A) = crosses, sheltered (B) = dots. Light grey background shading denoted by ’unavailable’ indicates where habitat was not available in the experimental sequence. Model fitted using glmmTMB in R 4.3.1.](./figures/Figure 4.jpg)
 
 <br>
+
+![Fig 2. Daytime artificial habitat occupancy fitted by Generalised Linear Mixed Model (log-linked Gaussian distribution). The model incorporated the random effect of time, day, and trial. Error bars represent 95% confidence intervals. Values fitted by habitat treatment, unsheltered (A) = crosses, sheltered (B) = dots. Light grey background shading denoted by 'unavailable' indicates where habitat was not available in the experimental sequence. Model fitted using glmmTMB in R 4.3.1.](./figures/Figure%204.jpg)
+
+<br>
+
 ```{r, fig.show='hide'}
 ggplot(data=habitat_prob_df, aes(x = factor(x, labels = c("Pre-exclusion", "Post-exclusion")), y=predicted, fill=group))+
   geom_errorbar(aes(ymin = conf.low, ymax = conf.high), width=.2) +
@@ -857,13 +843,14 @@ ggplot(data=habitat_prob_df, aes(x = factor(x, labels = c("Pre-exclusion", "Post
   theme_JN()+
   theme(axis.text.x=element_text(size=8))
 ```
-<br>  
-
-![Fig 3. The predicted probability of fish occupying a habitat during daytime, fitted by Generalised Linear Mixed Models (logit-linked binomial distributions). The model incorporated the random effect of time, day, and trial. Error bars represent 95% confidence intervals. Values fitted by habitat type, artificial habitat = dots and dashed lines, pumping station = crosses and dotted lines. Models fitted using glmmTMB in R 4.3.1.](./figures/Figure 5.jpg)
 
 <br>
 
----
+![Fig 3. The predicted probability of fish occupying a habitat during daytime, fitted by Generalised Linear Mixed Models (logit-linked binomial distributions). The model incorporated the random effect of time, day, and trial. Error bars represent 95% confidence intervals. Values fitted by habitat type, artificial habitat = dots and dashed lines, pumping station = crosses and dotted lines. Models fitted using glmmTMB in R 4.3.1.](./figures/Figure%205.jpg)
+
+<br>
+
+------------------------------------------------------------------------
 
 # 5. Post-hoc analysis
 
@@ -888,7 +875,7 @@ The results of the repeated measures ANOVAs suggest thee is a significant differ
 
 ## 5.2 t.test
 
-For the paired t.tests it will be necessary to create new dataframes with equal samples between grouping variables.  
+For the paired t.tests it will be necessary to create new dataframes with equal samples between grouping variables.\
 First identify the group lengths.
 
 ```{r}
@@ -899,7 +886,7 @@ table(roach_wide %>%
 
 We will use the minimal group length (630) for group comparisons.
 
-Paired comparison between baseline and intervention 1 pumping station.  
+Paired comparison between baseline and intervention 1 pumping station.
 
 ```{r}
 i1_base_ps<-  roach_wide %>%
@@ -913,8 +900,7 @@ i1_base_ps<-  roach_wide %>%
 t.test(c_ps_normalized ~ sequence,data=i1_base_ps, paired = TRUE)
 ```
 
-
-Paired comparison between intervention1 and intervention 2 in artificial habitat.  
+Paired comparison between intervention1 and intervention 2 in artificial habitat.
 
 ```{r}
 i1_i2_hab<- roach_wide %>%
@@ -927,7 +913,6 @@ i1_i2_hab<- roach_wide %>%
 
 t.test(c_hab_normalized ~ sequence,data=i1_i2_hab, paired = TRUE)
 ```
-
 
 Paired comparison between intervention 1 and intervention 3 in pumping station.
 
@@ -942,7 +927,6 @@ t.test(c_ps_normalized ~ sequence,data=i1_i3_ps, paired = TRUE)
 ```
 
 Paired comparison between intervention 2 and intervention 3 in artificial habitat.
-
 
 ```{r}
 i2_i3_hab<- roach_wide %>%
@@ -990,18 +974,12 @@ treatment_ps<- roach_wide %>%
 t.test(c_ps_normalized ~ treatment,data=treatment_ps, paired = TRUE) 
 ```
 
-
 # 6. Write-up
 
 ## 6.1 Methodology
 
-During the video analysis 20,827 individual fish counts were made (i.e., a count of 0 – 12 h-1 for each habitat) and therefore we used Generalized Linear Mixed Effect models (GLMMs) to account for repeated measures (trial) and temporal dependency (hour, day) and to investigate habitat occupancy and preference under baseline, habitat introduction and habitat exclusion conditions. To standardise counts and generalise interpretation, the discrete fish count data (0 – 12) from the pumping station and artificial habitats, and open water were rescaled to the continuous variable ‘habitat occupancy’ (0 – 1) by applying min-max scaling (R function ‘scale’) prior to analysis. Individual GLMMs (R function ‘glmmTMB’ in package ‘glmmTMB’) were built to estimate habitat occupancy in the three response categories (pumping station, open water, artificial habitat). The rescaled response variables were left-skewed (i.e., many values close to 0) and thus a Gamma distribution was not used. Instead, zeros were removed from the rescaled response variables by adding 1 × 10−9 and gaussian distributions were used in the models with a log link applied to account for heteroscedasticity. We defined the model structure a priori, including experimental sequence (levels = baseline, I 1, I2, I3), light (levels = day, night), and treatment (levels = unsheltered (A), sheltered (B)) as fixed effects. The baseline and intervention 2 categories were not included in the artificial habitat and pumping station models, respectively, as these were inherently not measured according to the experimental design. Repeated measures and temporal dependency were treated by including the nested random effects of hour, day, and trial, which all had variances higher than zero, improved the models Akaike's Information Criterion (AIC) and goodness of fit (Table 1).
-To separately analyse the effect of habitat exclusion on overall probability of fish occupying a given habitat post-exclusion (sequence: I 3) we fitted a pair of GLMMs in glmmTMB with binomial distribution (link = logit). In these models, fixed effects were limited to experimental sequence (I 1, I 3) and used the same random effects specified in the main models. Model assessment was performed on the final models by examining the predicted versus residual diagnostic plots according to Zurr.et al. (2007) (R function ‘simulateResiduals’ in package ‘DHARma’). Residuals of the artificial habitat model were normal, but the pumping station and open water variables deviated. However, sample sizes of the response variables were sufficiently large and thus paired t tests (R function ‘t.test’) and repeated measures ANOVA (R function ‘aov’) were used for post-hoc group comparisons when there were significant fixed effect differences in the models (Fagerland, 2012). Model predictions (means ± 95% CI) were calculated using R function ‘ggpredict’ in package ‘ggeffects’. All data were analysed using R version 4.3.1 (RCore Team, 2022) in RStudio 2023.06.0 (RStudio Team, 2022) and statistical figures were created using R packages ‘ggplot2’ and ‘ggpubr’.
+During the video analysis 20,827 individual fish counts were made (i.e., a count of 0 -- 12 h-1 for each habitat) and therefore we used Generalized Linear Mixed Effect models (GLMMs) to account for repeated measures (trial) and temporal dependency (hour, day) and to investigate habitat occupancy and preference under baseline, habitat introduction and habitat exclusion conditions. To standardise counts and generalise interpretation, the discrete fish count data (0 -- 12) from the pumping station and artificial habitats, and open water were rescaled to the continuous variable 'habitat occupancy' (0 -- 1) by applying min-max scaling (R function 'scale') prior to analysis. Individual GLMMs (R function 'glmmTMB' in package 'glmmTMB') were built to estimate habitat occupancy in the three response categories (pumping station, open water, artificial habitat). The rescaled response variables were left-skewed (i.e., many values close to 0) and thus a Gamma distribution was not used. Instead, zeros were removed from the rescaled response variables by adding 1 × 10−9 and gaussian distributions were used in the models with a log link applied to account for heteroscedasticity. We defined the model structure a priori, including experimental sequence (levels = baseline, I 1, I2, I3), light (levels = day, night), and treatment (levels = unsheltered (A), sheltered (B)) as fixed effects. The baseline and intervention 2 categories were not included in the artificial habitat and pumping station models, respectively, as these were inherently not measured according to the experimental design. Repeated measures and temporal dependency were treated by including the nested random effects of hour, day, and trial, which all had variances higher than zero, improved the models Akaike's Information Criterion (AIC) and goodness of fit (Table 1). To separately analyse the effect of habitat exclusion on overall probability of fish occupying a given habitat post-exclusion (sequence: I 3) we fitted a pair of GLMMs in glmmTMB with binomial distribution (link = logit). In these models, fixed effects were limited to experimental sequence (I 1, I 3) and used the same random effects specified in the main models. Model assessment was performed on the final models by examining the predicted versus residual diagnostic plots according to Zurr.et al. (2007) (R function 'simulateResiduals' in package 'DHARma'). Residuals of the artificial habitat model were normal, but the pumping station and open water variables deviated. However, sample sizes of the response variables were sufficiently large and thus paired t tests (R function 't.test') and repeated measures ANOVA (R function 'aov') were used for post-hoc group comparisons when there were significant fixed effect differences in the models (Fagerland, 2012). Model predictions (means ± 95% CI) were calculated using R function 'ggpredict' in package 'ggeffects'. All data were analysed using R version 4.3.1 (RCore Team, 2022) in RStudio 2023.06.0 (RStudio Team, 2022) and statistical figures were created using R packages 'ggplot2' and 'ggpubr'.
 
 ## 6.2 Results
 
-The raw data included a total of 30120, 29004, and 23924 fish counted across the 24 12-day trials in the artificial and pumping station habitats, and open water, respectively. After rescaling the response variables to represent habitat occupancy (0 – 1) we found that habitat occupancy was highest during the day, and night had a negative effect on habitat occupancy in the pumping station (GLMM: -0.253 ± 0.019, p = < 0.001) and artificial habitats (GLMM: -0.621 ± 0.025, p = < 0.001); open water occupancy was lowest during the day and increased at night (GLMM: 1.388 ± 0.046, p = < 0.001) (Figure 3, Table 2). The nocturnal effect i.e., fish occupying structured habitat during the day and dispersing in open water at night was fixed throughout the study, except where open water dispersal appeared to be reduced when we introduced artificial habitat (Figure 3b). No significant day-to-day variations in this relationship were observed within each experimental sequence (i.e., daytime occupancy was similar 24h vs 72h post-intervention).
-Our results show that habitat availability (i.e., experimental sequence) had a significant effect on habitat occupancy in the pumping station (repeated measures ANOVA: df = 2 F = 2446 p = <0.001), artificial habitat (repeated measures ANOVA: df = 2 F = 934.6 p = <0.001) and open water (repeated measures ANOVA: df = 3 F = 157.5 p = <0.001) models. Our hypothesis (i) that fish will occupy pumping station habitat during the day was supported during a baseline observation during which pumping station occupancy was predicted to reach 0.764 ± 0.019 (GLMM: p = < 0.001) (Figure 3a, Table 2). We introduced artificial habitat in a pre-exclusion period (intervention 1), but a predicted occupancy of 0.304 ± 0.038 (GLMM: p = < 0.001) in the artificial habitat only partially supported our hypothesis (ii) and suggested fish preferred the pumping station in which occupancy was marginally reduced to 0.697 ± 0.019 compared to baseline measurements (GLMM: p = < 0.001) (paired t.test: t = 4.846, p = <0.001) (Figure 3, Table 2). In support of our hypothesis (iii) artificial habitat occupancy was positively correlated with the exclusion period when we removed fish from the pumping station (intervention 2), during which daytime artificial habitat occupancy significantly increased to 0.933 ± 0.22 (GLMM: p = < 0.001) (paired t.test: t = -32.673, p = <0.001) (Figure 3c, Table 2). 
-We reintroduced the pumping station in a post-exclusion period (intervention 3) to determine whether habitat exclusion affected the preference for pumping station demonstrated during baseline and pre-exclusion (intervention 1) observations. Our results supported our hypothesis (iv) and show that daytime habitat occupancy in the pumping station was significantly reduced to 0.098 ± 0.086 (GLMM: p = < 0.001) when compared to the pre-exclusion period (paired t.test: t = 42.112, p = <0.001) (Figure 3a, Table 2). In contrast, artificial habitat occupancy was significantly increased to 0.812 ± 0.024 (GLMM: p = < 0.001) when compared to pre-exclusion (paired t.test: t = -38.233, p = < 0.001) and only marginally reduced when compared to the exclusion period (paired t.test: t = - 0.516, p = 0.605) (Figure 3c, Table 2). In support of our hypothesis (v), we found significant effects of artificial habitat treatment where artificial habitat occupancy was negatively correlated with unsheltered (A) treatments (GLMM: -0.085 ± 0.015, p = < 0.001) and was significantly higher during trials which received sheltered treatments (paired t.test: t = 4.277, p = < 0.001) (Figure 4; Table 2). Accordingly, pumping station occupancy was positively correlated with unsheltered (A) treatments (GLMM: 0.042 ± 0.019, p = 0.026) and was significantly higher during trials which received unsheltered treatments (paired t.test: t = - 4.386, p = < 0.001) (Table 2). Open water occupancy was unaffected by treatment (GLMM: 0.039 ± 0.024, p = 0.098) (Table 2). Overall, our results show that daytime artificial habitat occupancy increased 2.7x by the end of the study, reaching 0.745 ± 0.024 and 0.812 ± 0.024 in the unsheltered and sheltered treatments, respectively.
-Based on our results, habitat exclusion was considered a primary driver for whether fish would preferentially select a pumping station or artificial habitat. Accordingly, we performed a pair of binomial GLMMs to examine the isolated effect of exclusion on habitat occupancy probability. These models add further support for our hypothesis (iv) and show the probability of fish occupying the pumping station was negatively correlated with the post-exclusion period (GLMM: -3.385 ± 0.166, p = < 0.001) during which occupancy probability significantly decreased from 74.1 ± 8.97 % in the pre-exclusion period to 8.84 ± 14.02 % in the post-exclusion period (Figure 5, Table 2). In contrast, we found that the probability of fish occupying artificial habitat was positively correlated with the post-exclusion period (GLMM: 2.909 ± 0.164, p = < 0.001) and occupancy probability significantly increased from 24.7 ± 10.3 % in the pre-exclusion period to 85.7 ± 12.6 % in the post-exclusion period (Figure 5, Table 2).
-
+The raw data included a total of 30120, 29004, and 23924 fish counted across the 24 12-day trials in the artificial and pumping station habitats, and open water, respectively. After rescaling the response variables to represent habitat occupancy (0 -- 1) we found that habitat occupancy was highest during the day, and night had a negative effect on habitat occupancy in the pumping station (GLMM: -0.253 ± 0.019, p = \< 0.001) and artificial habitats (GLMM: -0.621 ± 0.025, p = \< 0.001); open water occupancy was lowest during the day and increased at night (GLMM: 1.388 ± 0.046, p = \< 0.001) (Figure 3, Table 2). The nocturnal effect i.e., fish occupying structured habitat during the day and dispersing in open water at night was fixed throughout the study, except where open water dispersal appeared to be reduced when we introduced artificial habitat (Figure 3b). No significant day-to-day variations in this relationship were observed within each experimental sequence (i.e., daytime occupancy was similar 24h vs 72h post-intervention). Our results show that habitat availability (i.e., experimental sequence) had a significant effect on habitat occupancy in the pumping station (repeated measures ANOVA: df = 2 F = 2446 p = \<0.001), artificial habitat (repeated measures ANOVA: df = 2 F = 934.6 p = \<0.001) and open water (repeated measures ANOVA: df = 3 F = 157.5 p = \<0.001) models. Our hypothesis (i) that fish will occupy pumping station habitat during the day was supported during a baseline observation during which pumping station occupancy was predicted to reach 0.764 ± 0.019 (GLMM: p = \< 0.001) (Figure 3a, Table 2). We introduced artificial habitat in a pre-exclusion period (intervention 1), but a predicted occupancy of 0.304 ± 0.038 (GLMM: p = \< 0.001) in the artificial habitat only partially supported our hypothesis (ii) and suggested fish preferred the pumping station in which occupancy was marginally reduced to 0.697 ± 0.019 compared to baseline measurements (GLMM: p = \< 0.001) (paired t.test: t = 4.846, p = \<0.001) (Figure 3, Table 2). In support of our hypothesis (iii) artificial habitat occupancy was positively correlated with the exclusion period when we removed fish from the pumping station (intervention 2), during which daytime artificial habitat occupancy significantly increased to 0.933 ± 0.22 (GLMM: p = \< 0.001) (paired t.test: t = -32.673, p = \<0.001) (Figure 3c, Table 2). We reintroduced the pumping station in a post-exclusion period (intervention 3) to determine whether habitat exclusion affected the preference for pumping station demonstrated during baseline and pre-exclusion (intervention 1) observations. Our results supported our hypothesis (iv) and show that daytime habitat occupancy in the pumping station was significantly reduced to 0.098 ± 0.086 (GLMM: p = \< 0.001) when compared to the pre-exclusion period (paired t.test: t = 42.112, p = \<0.001) (Figure 3a, Table 2). In contrast, artificial habitat occupancy was significantly increased to 0.812 ± 0.024 (GLMM: p = \< 0.001) when compared to pre-exclusion (paired t.test: t = -38.233, p = \< 0.001) and only marginally reduced when compared to the exclusion period (paired t.test: t = - 0.516, p = 0.605) (Figure 3c, Table 2). In support of our hypothesis (v), we found significant effects of artificial habitat treatment where artificial habitat occupancy was negatively correlated with unsheltered (A) treatments (GLMM: -0.085 ± 0.015, p = \< 0.001) and was significantly higher during trials which received sheltered treatments (paired t.test: t = 4.277, p = \< 0.001) (Figure 4; Table 2). Accordingly, pumping station occupancy was positively correlated with unsheltered (A) treatments (GLMM: 0.042 ± 0.019, p = 0.026) and was significantly higher during trials which received unsheltered treatments (paired t.test: t = - 4.386, p = \< 0.001) (Table 2). Open water occupancy was unaffected by treatment (GLMM: 0.039 ± 0.024, p = 0.098) (Table 2). Overall, our results show that daytime artificial habitat occupancy increased 2.7x by the end of the study, reaching 0.745 ± 0.024 and 0.812 ± 0.024 in the unsheltered and sheltered treatments, respectively. Based on our results, habitat exclusion was considered a primary driver for whether fish would preferentially select a pumping station or artificial habitat. Accordingly, we performed a pair of binomial GLMMs to examine the isolated effect of exclusion on habitat occupancy probability. These models add further support for our hypothesis (iv) and show the probability of fish occupying the pumping station was negatively correlated with the post-exclusion period (GLMM: -3.385 ± 0.166, p = \< 0.001) during which occupancy probability significantly decreased from 74.1 ± 8.97 % in the pre-exclusion period to 8.84 ± 14.02 % in the post-exclusion period (Figure 5, Table 2). In contrast, we found that the probability of fish occupying artificial habitat was positively correlated with the post-exclusion period (GLMM: 2.909 ± 0.164, p = \< 0.001) and occupancy probability significantly increased from 24.7 ± 10.3 % in the pre-exclusion period to 85.7 ± 12.6 % in the post-exclusion period (Figure 5, Table 2).

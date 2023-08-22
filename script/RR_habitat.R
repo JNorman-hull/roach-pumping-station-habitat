@@ -36,12 +36,7 @@ roach_wide_status<- df_status(roach_wide, print_results = F)
 # Create a lookup table for variable labels
 labels_table <- list(
   treatment = c('Covered (B)','Uncovered (A)'),
-  ps_tank_end = c('RH', 'LH'),
-  room_end = c('Far', 'Near'),
   light = c('Day', 'Night'),
-  hab_avail = c('AH unavailable', 'AH available'),
-  ps_avail = c('PS available','PS unavailable'),
-  both_avail = c('Single Available', 'Both Available'),
   sequence = c('Baseline', 'I 1', 'I 2', 'I 3')
 )
 
@@ -54,7 +49,7 @@ for (var in names(labels_table)) {
 }
 
 # Convert other variables to factors without applying labels
-other_vars <- c("hours_havail", "hours_lout", "run", "day", "trial")
+other_vars <- c("hours_havail", "hours_lout", "day","trial")
 roach_wide[other_vars] <- lapply(roach_wide[other_vars], as.factor)
 
 ##1.3 NA, 0, outliers, normality ####

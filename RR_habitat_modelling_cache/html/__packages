@@ -10,9 +10,6 @@ forcats
 lubridate
 knitr
 kableExtra
-lattice
-survival
-Formula
 Hmisc
 funModeling
 dlookr
@@ -20,3 +17,4 @@ glmmTMB
 ggeffects
 DHARMa
 ggpubr
+shiny
