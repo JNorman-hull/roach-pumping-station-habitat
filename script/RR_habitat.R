@@ -801,3 +801,143 @@ table(treatment_ps$sequence)
 
 t.test(c_ps_normalized ~ treatment,data=treatment_ps, paired = TRUE) 
 
+
+
+
+
+
+
+#5 Zero-one-inflated beta model ####
+
+#Considering new model approach using zero-one-inflated beta model distribution to account for U-shaped distribution in data.
+
+#First, modify original rescaled variable to not add 0.0000001
+
+#standardise raw count data to scale of 0 - 1
+#across function looks at each habitat count variable, divides them by the max value, returns new variable
+
+roach_wide <- roach_wide %>%
+  mutate(across(c(c_hab, c_ps, c_open), ~ . / max(.), .names = "{.col}_normalized_b"))
+
+###5.1 AH ####
+
+library(brms)
+
+#Null model
+
+brmmod <- brm(
+  bf(c_hab_normalized ~ sequence + light + treatment + (1 | trial)),  # Zero-inflation part of the model
+  family = zero_one_inflated_beta(),  # Specifies the use of a zero-one-inflated beta distribution
+  data = roach_wide
+)
+
+
+mod1_b <- glmmTMB(c_hab_normalized ~ 1, data = roach_wide%>%filter(sequence!="Baseline"),
+                  family = betabinomial(link="logit"))
+summary(mod1_b)
+
+#Add fixed effects
+mod1.1_b <- update(mod1_b, c_hab ~ sequence + light + treatment)
+summary(mod1.1_b)
+#Plot fit
+plot(ggpredict(mod1.1_b, terms = c("sequence","light")))
+
+#Model predictions good, close to observed.
+#Improve by adding repeated measures and temporal dependency 
+
+#Add random effects
+mod1.2_b <- update(mod1.1_b, . ~ . + (1 | time_factor/day/trial))
+summary(mod1.2_b)
+#Plot fit
+plot(ggpredict(mod1.2_b, terms = c("sequence","light")))
+
+#Model predictions improved. Supported by AIC and loglik
+
+#Plot simulated residuals to check fit of model
+fittedmod1.2 <- mod1.2
+simuout1 <- simulateResiduals(fittedModel = fittedmod1.2)
+plot(simuout1, quantreg = T)
+
+residualsmod1.2_b <- residuals(mod1.2_b)
+qqnorm(residualsmod1.2_b)
+qqline(residualsmod1.2_b)
+hist(residualsmod1.2_b, breaks = "FD", col = "lightblue")
+
+#Generally follows a linear relationship, accepted as approx normal
+#quantile deviations likely a result of dispersion. Expected due to values close to 0 and 1.
+
+###5.2 PS ####
+
+#Null model
+mod2 <- glmmTMB(c_ps_normalized ~ 1, data = roach_wide%>%filter(sequence!="I 2"),
+                family = gaussian(link="log"))
+summary(mod2)
+
+#Add fixed effects
+mod2.1 <- update(mod2, c_ps_normalized ~ sequence + light + treatment)
+summary(mod2.1)
+#Plot fit
+plot(ggpredict(mod2.1, terms = c("sequence","light")))
+
+#Model predictions good, close to observed.
+#Improve by adding repeated measures and temporal dependency 
+
+#Add random effects
+mod2.2 <- update(mod2.1, . ~ . + (1 | time_factor/day/trial))
+summary(mod2.2)
+#Plot fit
+plot(ggpredict(mod2.2, terms = c("sequence","light")))
+
+#Model predictions improved. Supported by AIC and loglik
+
+#Plot simulated residuals to check fit of model
+fittedmod2.2 <- mod2.2
+simuout2 <- simulateResiduals(fittedModel = fittedmod2.2)
+plot(simuout2, quantreg = T)
+
+residualsmod2.2 <- residuals(mod2.2)
+qqnorm(residualsmod2.2)
+qqline(residualsmod2.2)
+hist(residualsmod2.2, breaks = "FD", col = "lightblue")
+
+#Deviates significantly from a normal distribution
+#quantile deviations likely a result of dispersion. Expected due to values close to 0 and 1.
+
+###5.3 OW ####
+
+#Null model
+mod3 <- glmmTMB(c_open_normalized ~ 1, data = roach_wide,
+                family = gaussian(link="log"))
+summary(mod3)
+
+#Add fixed effects
+mod3.1 <- update(mod3, c_open_normalized ~ sequence + light + treatment)
+summary(mod3.1)
+#Plot fit
+plot(ggpredict(mod3.1, terms = c("sequence","light")))
+
+#Model predictions good, close to observed.
+#Improve by adding repeated measures and temporal dependency 
+
+#Add random effects
+mod3.2 <- update(mod3.1, . ~ . + (1 | time_factor/day/trial))
+summary(mod3.2)
+#Plot fit
+plot(ggpredict(mod3.2, terms = c("sequence","light")))
+
+#Model predictions improved. Supported by AIC and loglik
+
+#Plot simulated residuals to check fit of model
+fittedmod3.2 <- mod3.2
+simuout3 <- simulateResiduals(fittedModel = fittedmod3.2)
+plot(simuout3, quantreg = T)
+
+residualsmod3.2 <- residuals(mod3.2)
+qqnorm(residualsmod3.2)
+qqline(residualsmod3.2)
+hist(residualsmod3.2, breaks = "FD", col = "lightblue")
+
+#Deviates significantly from a normal distribution
+#Deviates from linear distribution. Confounded by daytime variation
+
+
