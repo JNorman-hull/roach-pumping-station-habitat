@@ -11,6 +11,7 @@ library(ggeffects)
 library(DHARMa)
 library(ggpubr)
 library(glmmTMB)
+library(marginaleffects)
 
 #1 Load data ####
 
@@ -39,6 +40,10 @@ labels_table <- list(
   light = c('Day', 'Night'),
   sequence = c('Baseline', 'I 1', 'I 2', 'I 3')
 )
+
+#NOTE: There is an error in the underlying data frame. Treatment 1 = covered occurs first, but should ideally start with 0 = uncovered. 
+# Light 0 = Day should naturally be 0 = night and 1 = day.
+# Labeling has been setup accordingly and does not need further modification
 
 # Convert variables to factors with specific labeling using a loop
 # Use the lookup table to get the labels for each variable
@@ -807,6 +812,220 @@ t.test(c_ps_normalized ~ treatment,data=treatment_ps, paired = TRUE)
 
 
 
+
+
+
+
+
+
+# 5 BiNomial####
+###AH ####
+
+roach_wide <- roach_wide %>%
+   mutate(
+    c_hab_f = 12 - c_hab,
+    c_ps_f = 12 - c_ps,
+    c_open_f = 12 - c_open)
+
+#Null model
+mod1 <- glmmTMB(cbind(c_hab,c_hab_f) ~ 1, data = roach_wide%>%filter(sequence!="Baseline"),
+                family = binomial(link="logit"))
+summary(mod1)
+#AIC  57481.3
+
+#Add fixed effects
+mod1.1 <- update(mod1, . ~ sequence + light + treatment)
+summary(mod1.1)
+#AIC 42802.4
+#Plot fit
+plot(ggpredict(mod1.1, terms = c("sequence","light")))
+#Model predictions good, close to observed.
+
+#Improve by adding repeated measures and temporal dependency 
+mod1.2 <- update(mod1.1, . ~ . + (1 | time_factor/day/trial))
+summary(mod1.2)
+#AIC 21416.6
+#Plot fit
+plot(ggpredict(mod1.2, terms = c("sequence","light")))
+
+#Model predictions hugely improved. Supported by AIC and loglik
+
+#As per reviewer comments, consider random effect of tank
+mod1.3 <- update(mod1.2, . ~ . + (1 | time_factor/day/trial) +(1|tank))
+summary(mod1.3)
+#AIC 21309.3 small improvement
+#Plot fit
+plot(ggpredict(mod1.3, terms = c("sequence","light")))
+
+#Add interaction between sequence & light. Advice from Marco
+mod1.4 <- update(mod1.3, . ~ . + sequence:light)
+summary(mod1.4)
+#AIC 21016.8 improved
+#Plot fit
+plot(ggpredict(mod1.4, terms = c("sequence","light")))+
+  scale_y_continuous(breaks = seq(0, 1, 0.1), limits = c(0, 1), expand = c(0, 0), 
+                     labels = scales::percent(seq(0, 1, 0.1), scale = 100))
+#ggpredict fixes treatment. Try alternative gggaverage for overall effect.
+plot(ggaverage(mod1.2, terms = c("sequence","light"), vcov=vcov(mod1.4)))+
+  scale_y_continuous(breaks = seq(0, 1, 0.1), limits = c(0, 1), expand = c(0, 0), 
+                     labels = scales::percent(seq(0, 1, 0.1), scale = 100))
+#Improved fit and error distribution
+
+#Plot simulated residuals to check fit of model
+fittedmod1.4 <- mod1.4
+simuout1 <- simulateResiduals(fittedModel = fittedmod1.4)
+plot(simuout1, quantreg = T)
+
+residualsmod1.4 <- residuals(mod1.4)
+qqnorm(residualsmod1.4)
+qqline(residualsmod1.4)
+hist(residualsmod1.4, breaks = "FD", col = "lightblue")
+
+#Observed vs expected show good relationship. Overdispersion present but unlikely to be treated in binomial model.
+#quantile deviations likely a result of dispersion. Expected due to values close to 0 and 1.
+
+
+
+test <- ggaverage(mod1.4, terms = c("sequence",  "light"),vcov=vcov(mod1.4))
+test2 <- ggpredict(mod1.4, terms = c("sequence",  "light"))
+
+ggplot(test, aes(x = x, y= predicted, colour = group))+
+  geom_point()+geom_errorbar(aes(ymin=conf.low, ymax = conf.high))
+ggplot(test2, aes(x = x, y= predicted, colour = group))+
+  geom_point()+geom_errorbar(aes(ymin=conf.low, ymax = conf.high))
+
+
+
+
+###PS ####
+#Null model
+mod2 <- glmmTMB(cbind(c_ps,c_ps_f) ~ 1, data = roach_wide%>%filter(sequence!="I 2"),
+                family = binomial(link="logit"))
+summary(mod2)
+#AIC  76209.6 
+
+#Add fixed effects
+mod2.1 <- update(mod2, . ~ sequence + light + treatment)
+summary(mod2.1)
+#AIC 54178.5 
+#Plot fit
+plot(ggpredict(mod1.1, terms = c("sequence","light")))
+#Model predictions good, close to observed.
+
+#Improve by adding repeated measures and temporal dependency 
+mod2.2 <- update(mod2.1, . ~ . + (1 | time_factor/day/trial))
+summary(mod2.2)
+#AIC 13274.8 
+#Plot fit
+plot(ggpredict(mod2.2, terms = c("sequence","light")))
+#Model predictions improved. Supported by AIC and loglik
+
+#As per reviewer comments, consider random effect of tank
+mod2.3 <- update(mod2.2, . ~ . + (1 | time_factor/day/trial) +(1|tank))
+summary(mod2.3)
+#Plot fit
+plot(ggpredict(mod2.3, terms = c("sequence","light")))
+#MODEL FAILS TO CONVERGE
+
+#Add in interaction term to see if model fit is improved and converges
+mod2.4 <- update(mod2.3, . ~ . + sequence:light)
+summary(mod2.4)
+#AIC 13267.3
+#Model now converges and provides an improved fit
+#Plot fit
+plot(ggpredict(mod2.4, terms = c("sequence","light")))
+#ggpredict produces perfect separation. Try alternative gggaverage for overall effect.
+plot(ggaverage(mod2.4, terms = c("sequence","light", "treatment"), vcov=vcov(mod2.4)))
+#More accurate predictions but errors still very small.
+
+#Plot simulated residuals to check fit of model
+fittedmod2.4 <- mod2.4
+simuout1 <- simulateResiduals(fittedModel = fittedmod2.4)
+plot(simuout1, quantreg = T)
+
+residualsmod2.4 <- residuals(mod2.4)
+qqnorm(residualsmod2.4)
+qqline(residualsmod2.4)
+hist(residualsmod2.4, breaks = "FD", col = "lightblue")
+#Observed vs expected show good relationship. Overdispersion present but unlikely to be treated in binomial model.
+#quantile deviations likely a result of dispersion. Expected due to values close to 0 and 1.
+
+
+
+test <- ggaverage(mod2.4, terms = c("sequence",  "light", "treatment"),vcov=vcov(mod1.4))
+test2 <- ggpredict(mod2.4, terms = c("sequence",  "light"))
+
+ggplot(test, aes(x = x, y= predicted, colour = group))+
+  geom_point()+geom_errorbar(aes(ymin=conf.low, ymax = conf.high))
+ggplot(test2, aes(x = x, y= predicted, colour = group))+
+  geom_point()+geom_errorbar(aes(ymin=conf.low, ymax = conf.high))
+
+
+
+###OW ####
+
+mod3 <- glmmTMB(cbind(c_open,c_open_f) ~ 1, data = roach_wide,
+                family = binomial(link="logit"))
+summary(mod3)
+#AIC  70469.0  
+
+#Add fixed effects
+mod3.1 <- update(mod3, . ~ sequence + light + treatment)
+summary(mod3.1)
+#AIC 56044.5   
+#Plot fit
+plot(ggpredict(mod3.1, terms = c("sequence","light")))
+#Model predictions good, close to observed.
+
+#Improve by adding repeated measures and temporal dependency 
+mod3.2 <- update(mod3.1, . ~ . + (1 | time_factor/day/trial))
+summary(mod3.2)
+#AIC 24043.1   
+#Plot fit
+plot(ggpredict(mod3.2, terms = c("sequence","light")))
+#Model predictions improved. Supported by AIC and loglik
+
+#As per reviewer comments, consider random effect of tank
+mod3.3 <- update(mod3.2, . ~ . + (1 | time_factor/day/trial) +(1|tank))
+summary(mod3.3)
+#AIC 24035.0  
+#Plot fit
+plot(ggpredict(mod3.3, terms = c("sequence","light")))
+
+#Add in interaction term to see if model fit is improved and converges
+mod3.4 <- update(mod3.3, . ~ . + sequence:light)
+summary(mod3.4)
+#AIC 23879.5  
+#Model provides an improved fit
+#Plot fit
+plot(ggpredict(mod3.4, terms = c("sequence","light")))
+#ggpredict produces perfect separation. Try alternative gggaverage for overall effect.
+plot(ggaverage(mod3.4, terms = c("sequence","light"), vcov=vcov(mod2.4)))
+#More accurate predictions but errors still very small.
+
+#Plot simulated residuals to check fit of model
+fittedmod3.4 <- mod3.4
+simuout1 <- simulateResiduals(fittedModel = fittedmod3.4)
+plot(simuout1, quantreg = T)
+
+residualsmod3.4 <- residuals(mod3.4)
+qqnorm(residualsmod3.4)
+qqline(residualsmod3.4)
+hist(residualsmod3.4, breaks = "FD", col = "lightblue")
+#Observed vs expected show good relationship.
+#quantile deviations likely a result of dispersion. Expected due to values close to 0 and 1.
+
+
+
+
+
+
+
+
+
+
+
+
 #5 Zero-one-inflated beta model ####
 
 #Considering new model approach using zero-one-inflated beta model distribution to account for U-shaped distribution in data.
@@ -826,7 +1045,7 @@ library(brms)
 #Null model
 
 brmmod <- brm(
-  bf(c_hab_normalized ~ sequence + light + treatment + (1 | trial)),  # Zero-inflation part of the model
+  bf(c_hab_normalized_b ~ sequence + light + treatment + (1 | trial)),  # Zero-inflation part of the model
   family = zero_one_inflated_beta(),  # Specifies the use of a zero-one-inflated beta distribution
   data = roach_wide
 )
