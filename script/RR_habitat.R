@@ -1,6 +1,6 @@
 #RStudio 2023.03.1+446 "Cherry Blossom" Release
 #R version 4.2.0
-#Ex-situ experimentation to determine if introduced artificial habitat can provide safe alternative to shelter in hazardous anthropogenic structures: if you build it, they might come
+#Ex-situ experimentation to determine if introduced artificial habitat can provide alternative refuge to hazardous anthropogenic structures: success with habitat management
 
 #Required libraries####
 
@@ -10,6 +10,7 @@ library(dlookr)
 library(ggeffects)
 library(DHARMa)
 library(ggpubr)
+library(cowplot)
 library(glmmTMB)
 library(marginaleffects)
 
@@ -77,19 +78,10 @@ plot_outlier(roach_wide)
 roach_wide%>% plot_normality(c_hab,c_ps,c_open)
 #Response variables are not-normal, expected for count data. Transformation will not achieve normality.
 
-##1.4 Rescale counts ####
-
-#standardise raw count data to scale of 0 - 1
-#across function looks at each habitat count variable, divides them by the max value, returns new variable
-#new variables are then adjusted to add 0.00000001 to any 0 entry
-roach_wide <- roach_wide %>%
-  mutate(across(c(c_hab, c_ps, c_open), ~ . / max(.), .names = "{.col}_normalized"),
-         across(ends_with("_normalized"), ~ ifelse(. == 0, . + 0.0000000001, .)))
-
-##1.5 Summarise ####
+##1.4 Summarise ####
 
 #create minimal data set
-roach_wide_sum = select(roach_wide, c_hab, c_ps, c_open, c_hab_normalized, c_ps_normalized, c_open_normalized, sequence, light, treatment)
+roach_wide_sum = select(roach_wide, c_hab, c_ps, c_open, sequence, light, treatment)
 
 #basic summary function
 summary(roach_wide_sum)
@@ -125,15 +117,39 @@ bind_rows(
 #mean of habitat occupancy in each habitat by light period and sequence
 roach_wide_sum %>%
   group_by(light) %>%
-  summarise(mean_c_hab = mean(c_hab_normalized),
-            mean_c_ps = mean(c_ps_normalized),
-            mean_c_open = mean(c_open_normalized)) %>%
+  summarise(med_c_hab = median(c_hab),
+            med_c_ps = median(c_ps),
+            med_c_open = median(c_open)) %>%
   mutate(variable = "Light") %>%
   bind_rows(roach_wide_sum %>% group_by(sequence) %>%
-              summarise(mean_c_hab = mean(c_hab_normalized),
-                        mean_c_ps = mean(c_ps_normalized),
-                        mean_c_open = mean(c_open_normalized)) %>%
+              summarise(med_c_hab = median(c_hab),
+                        med_c_ps = median(c_ps),
+                        med_c_open = median(c_open)) %>%
               mutate(variable = "Sequence"))
+
+#Quick count stat summary
+
+count_sum <- roach_wide_sum %>% 
+  group_by(light, sequence) %>%
+  summarise(n=n(),
+            med_c_hab = median(c_hab),
+            IQR_c_hab = IQR(c_hab),
+            med_c_ps = median(c_ps),
+            IQR_c_ps = IQR(c_ps),
+            med_c_open = median(c_open),
+            IQR_c_open = IQR(c_open),
+            .groups = 'drop')
+
+count_sum2 <- roach_wide_sum %>% 
+  group_by(light, treatment, sequence) %>%
+  summarise(n=n(),
+            med_c_hab = median(c_hab),
+            IQR_c_hab = IQR(c_hab),
+            med_c_ps = median(c_ps),
+            IQR_c_ps = IQR(c_ps),
+            med_c_open = median(c_open),
+            IQR_c_open = IQR(c_open),
+            .groups = 'drop')
 
 #2 Visualise main relationships ####
 
@@ -147,10 +163,8 @@ ggplot(roach_wide_sum, aes(x = sequence, y= c_hab)) +
 ggplot(roach_wide_sum, aes(x = sequence, y= c_open)) +
   geom_boxplot()
 
-#boxplots confirm raw count data are unsuitable for analysis
 #large variation in counts presents large IQR + outliers. Descriptive data e.g., medians hard to interperate
 
-#From here, analysis should be based on standardised counts
 #Visualise rescaled habitat occupancy data
 
 #Artificial habitat,light
@@ -219,13 +233,7 @@ ggplot(roach_wide_sum %>%
 #Day/night relationship is relatively fixed throughout the experiment with no deviations of great concern
 #Drop in both day/night occupancy in open water counts, sequence I 1. 
 #Possibly attributed to introducing AH
-
-#Habitat occupancy shows interesting pasterns throughout experiment
-#Baseline - H1 supported, fish occupy PS during the day.
-#I1 - H2 rejected, no equal preference. Preference shown for PS when AH introduced
-#I2 - H3 supported, habitat occupancy increased in AH during exclusion
-#I3 - H4 supported, habitat occupancy highest in AH post-exclusion. Preferential change.
-
+#This should be considered a an interaction term for any modelling
 ####
 
 #Artificial habitat, sequence, treatment
@@ -321,6 +329,7 @@ ggplot(roach_wide_sum %>% filter(sequence!="Baseline")%>% filter(light=="Day")%>
                 width = 0.2)
 
 #Supports H5 - AH occupancy highest in covered treatments, regardless of sequence.
+#Needs confirmation through modelling which accounts for random influence
 
 ####
 
@@ -408,25 +417,20 @@ roach_wide %>%
 roach_wide <- roach_wide %>%
   mutate(time_factor = factor(as.numeric(format(strptime(time, format = "%H:%M:%S"), "%H"))))
 
-#Create new DF for binary model
-roach_binary <- roach_wide %>%filter (sequence=="I 1"|sequence=="I 3")%>%filter(light=="Day")
-roach_binary$binary <- ifelse(roach_binary$sequence =="I 1", 0,1)
-
-
 ##3.2 Data exploration ####
 
 #The data exploration showed
-#continuous non-negative response variable with zero values treated by adding 0.000000001
-#Left-skewed, Gamma not used.
-#-Gaussian distribution. Apply log-link to account for uneven variance in sequence groups.
-#-Raw counts would be overdispersed, treated by rescaling.
+#Count data representing 0 - 12.
+#U-shaped, Beta distribution poor fit.
+#-Binomial distribution. Apply logit-link to account for uneven variance in sequence groups.
+#-Raw counts preferred than rescaling.
 # No NAs
 # No outliers
 # Non-normally distributed response variable, but large sample size
 # Apply generalised model with relaxed assumptions
-# No zeros in response
+# Zeros in response but are real zeros. No zero-inflation considered.
 # No continuous predictors, so no collinearity issues
-# No interactions
+# Interaction between sequence and light
 # No Independence of response variables - Repeated measures design requires random effect of trial
 # Temporal dependency should be accounted for with random effects
 
@@ -436,29 +440,52 @@ table(roach_wide$light) #unequal, but naturally
 #Data is well balanced in grouping variables
 
 ##3.3 Build ####
+
+#Create successes - failures structure for binomial model
+#Adds extra columns with total possible count - actual count (failures)
+roach_wide <- roach_wide %>%
+  mutate(
+    c_hab_f = 12 - c_hab,
+    c_ps_f = 12 - c_ps,
+    c_open_f = 12 - c_open)
+
 ###3.3.1 AH ####
 
 #Null model
-mod1 <- glmmTMB(c_hab_normalized ~ 1, data = roach_wide%>%filter(sequence!="Baseline"),
-                family = gaussian(link="log"))
+mod1 <- glmmTMB(cbind(c_hab,c_hab_f) ~ 1, data = roach_wide%>%filter(sequence!="Baseline"),
+                family = binomial(link="logit"))
 summary(mod1)
+#AIC  57481.3
 
 #Add fixed effects
-mod1.1 <- update(mod1, c_hab_normalized ~ sequence + light + treatment)
+#Now including an interaction between sequence & light after visualizing relationship and recommendation from bio-statistician 
+mod1.1 <- update(mod1, . ~ sequence*light + treatment)
 summary(mod1.1)
+#AIC 41048.6
 #Plot fit
 plot(ggpredict(mod1.1, terms = c("sequence","light")))
-
 #Model predictions good, close to observed.
+
 #Improve by adding repeated measures and temporal dependency 
-
-#Add random effects
-mod1.2 <- update(mod1.1, . ~ . + (1 | time_factor/day/trial))
+#Also add tank to account for between set-up differences
+mod1.2 <- update(mod1.1, . ~ . + (1 | trial/day/time_factor)+(1|tank))
 summary(mod1.2)
-#Plot fit
-plot(ggpredict(mod1.2, terms = c("sequence","light")))
-
+#AIC 17913.3
 #Model predictions improved. Supported by AIC and loglik
+
+#Plot fit
+plot(ggpredict(mod1.2, terms = c("sequence","light")))+
+  scale_y_continuous(breaks = seq(0, 1, 0.1), limits = c(0, 1), expand = c(0, 0), 
+                     labels = scales::percent(seq(0, 1, 0.1), scale = 100))
+#ggpredict fixes treatment. Try alternative gggaverage for overall effect.
+plot(predict_response(mod1.2, terms = c("sequence","light"), margin="empirical", ci_level = 0.99))+
+  scale_y_continuous(breaks = seq(0, 1, 0.1), limits = c(0, 1), expand = c(0, 0), 
+                     labels = scales::percent(seq(0, 1, 0.1), scale = 100))
+
+#margin=mean_mode = ggpredict. Conditional effect of the predictor on a typical grouping variable (e.g., selecting one level of treatment)
+#margin=empirical = ggaverage. Marginal effect of the predictor across all levels of a grouping variable (e.g., both treatments)
+
+#Improved fit and error distribution
 
 #Plot simulated residuals to check fit of model
 fittedmod1.2 <- mod1.2
@@ -470,99 +497,98 @@ qqnorm(residualsmod1.2)
 qqline(residualsmod1.2)
 hist(residualsmod1.2, breaks = "FD", col = "lightblue")
 
-#Generally follows a linear relationship, accepted as approx normal
+#Observed vs expected show good relationship. Overdispersion present but unlikely to be treated in binomial model.
 #quantile deviations likely a result of dispersion. Expected due to values close to 0 and 1.
+
+
 
 ###3.3.2 PS ####
 
 #Null model
-mod2 <- glmmTMB(c_ps_normalized ~ 1, data = roach_wide%>%filter(sequence!="I 2"),
-                family = gaussian(link="log"))
+mod2 <- glmmTMB(cbind(c_ps,c_ps_f) ~ 1, data = roach_wide%>%filter(sequence!="I 2"),
+                family = binomial(link="logit"))
 summary(mod2)
+#AIC  76209.6 
 
 #Add fixed effects
-mod2.1 <- update(mod2, c_ps_normalized ~ sequence + light + treatment)
+#Now including an interaction between sequence & light after visualizing relationship and recommendation from bio-statistician 
+mod2.1 <- update(mod2, . ~ sequence*light + treatment)
 summary(mod2.1)
+#AIC 53654.1 
 #Plot fit
 plot(ggpredict(mod2.1, terms = c("sequence","light")))
-
 #Model predictions good, close to observed.
+
 #Improve by adding repeated measures and temporal dependency 
-
-#Add random effects
-mod2.2 <- update(mod2.1, . ~ . + (1 | time_factor/day/trial))
+#Also add tank to account for between set-up differences
+mod2.2 <- update(mod2.1, . ~ . + (1 | trial/day/time_factor)+(1|tank))
 summary(mod2.2)
+#AIC 9782.8 
 #Plot fit
-plot(ggpredict(mod2.2, terms = c("sequence","light")))
-
+plot(ggpredict(mod2.2, terms = c("sequence","light")))+
+  scale_y_continuous(breaks = seq(0, 1, 0.1), limits = c(0, 1), expand = c(0, 0), 
+                     labels = scales::percent(seq(0, 1, 0.1), scale = 100))
+#ggpredict fixes treatment. Try alternative gggaverage for overall effect.
+plot(predict_response(mod2.2, terms = c("sequence","light"), margin="empirical", ci_level = 0.99))+
+  scale_y_continuous(breaks = seq(0, 1, 0.1), limits = c(0, 1), expand = c(0, 0), 
+                     labels = scales::percent(seq(0, 1, 0.1), scale = 100))
 #Model predictions improved. Supported by AIC and loglik
 
 #Plot simulated residuals to check fit of model
 fittedmod2.2 <- mod2.2
-simuout2 <- simulateResiduals(fittedModel = fittedmod2.2)
-plot(simuout2, quantreg = T)
+simuout1 <- simulateResiduals(fittedModel = fittedmod2.2)
+plot(simuout1, quantreg = T)
 
 residualsmod2.2 <- residuals(mod2.2)
 qqnorm(residualsmod2.2)
 qqline(residualsmod2.2)
 hist(residualsmod2.2, breaks = "FD", col = "lightblue")
-
-#Deviates significantly from a normal distribution
+#Observed vs expected show good relationship. Overdispersion not present.
 #quantile deviations likely a result of dispersion. Expected due to values close to 0 and 1.
+
 
 ###3.3.3 OW ####
 
-#Null model
-mod3 <- glmmTMB(c_open_normalized ~ 1, data = roach_wide,
-                family = gaussian(link="log"))
+#Null
+mod3 <- glmmTMB(cbind(c_open,c_open_f) ~ 1, data = roach_wide,
+                family = binomial(link="logit"))
 summary(mod3)
+#AIC  70469.0  
 
 #Add fixed effects
-mod3.1 <- update(mod3, c_open_normalized ~ sequence + light + treatment)
+mod3.1 <- update(mod3, . ~ sequence*light + treatment)
 summary(mod3.1)
+#AIC 54648.2  
 #Plot fit
 plot(ggpredict(mod3.1, terms = c("sequence","light")))
-
 #Model predictions good, close to observed.
+
 #Improve by adding repeated measures and temporal dependency 
-
-#Add random effects
-mod3.2 <- update(mod3.1, . ~ . + (1 | time_factor/day/trial))
+mod3.2 <- update(mod3.1, . ~ . + (1 | trial/day/time_factor) +(1|tank))
 summary(mod3.2)
+#AIC 19764.5   
 #Plot fit
-plot(ggpredict(mod3.2, terms = c("sequence","light")))
-
+plot(ggpredict(mod3.2, terms = c("sequence","light")))+
+  scale_y_continuous(breaks = seq(0, 1, 0.1), limits = c(0, 1), expand = c(0, 0), 
+                     labels = scales::percent(seq(0, 1, 0.1), scale = 100))
+#ggpredict fixes treatment. Try alternative gggaverage for overall effect.
+plot(ggaverage(mod3.2, terms = c("sequence","light"), margin ="empirical",ci_level = 0.99))+
+  scale_y_continuous(breaks = seq(0, 1, 0.1), limits = c(0, 1), expand = c(0, 0), 
+                     labels = scales::percent(seq(0, 1, 0.1), scale = 100))
 #Model predictions improved. Supported by AIC and loglik
+
 
 #Plot simulated residuals to check fit of model
 fittedmod3.2 <- mod3.2
-simuout3 <- simulateResiduals(fittedModel = fittedmod3.2)
-plot(simuout3, quantreg = T)
+simuout1 <- simulateResiduals(fittedModel = fittedmod3.2)
+plot(simuout1, quantreg = T)
 
 residualsmod3.2 <- residuals(mod3.2)
 qqnorm(residualsmod3.2)
 qqline(residualsmod3.2)
 hist(residualsmod3.2, breaks = "FD", col = "lightblue")
-
-#Deviates significantly from a normal distribution
-#Deviates from linear distribution. Confounded by daytime variation
-
-###3.3.4 Binary ####
-
-mod_binary_ah <- glmmTMB(c_hab_normalized ~ as.factor(binary) + (1 | time_factor/day/trial), data = roach_binary, family = binomial())
-
-plot(ggpredict(mod_binary_ah, terms = c("binary")))
-summary(mod_binary_ah)
-
-residualsmodmod_binary_ah <- residuals(mod_binary_ah)
-qqnorm(residualsmodmod_binary_ah)
-qqline(residualsmodmod_binary_ah)
-hist(residualsmodmod_binary_ah, breaks = "FD", col = "lightblue")
-
-mod_binary_ps <- glmmTMB(c_ps_normalized ~ as.factor(binary) + (1 | time_factor/day/trial), data = roach_binary, family = binomial())
-
-plot(ggpredict(mod_binary_ps, terms = c("binary")))
-summary(mod_binary_ps)
+#Observed vs expected show good relationship.
+#quantile deviations likely a result of dispersion. Expected due to values close to 0 and 1.
 
 ##3.4 Plot GLMM####
 
@@ -585,10 +611,11 @@ theme_JN <- function(base_size=10){
 
 #Save model predictions
 
-c_hab_glmmm <-ggpredict(mod1.2, terms = c("sequence", "light"))
-c_ps_glmmm <-ggpredict(mod2.2, terms = c("sequence", "light"))
-c_open_glmmm <-ggpredict(mod3.2, terms = c("sequence", "light"))
-c_hab_glmmm_treat <-ggpredict(mod1.2, terms = c("sequence", "treatment", "light[Day]"))
+c_hab_glmmm <-ggaverage(mod1.2, terms = c("sequence", "light"), ci_level = 0.99)
+c_ps_glmmm <-ggaverage(mod2.2, terms = c("sequence", "light"), ci_level = 0.99)
+c_open_glmmm <-ggaverage(mod3.2, terms = c("sequence", "light"), ci_level = 0.99)
+c_hab_glmmm_treat <-ggaverage(mod1.2, terms = c("sequence", "treatment", "light[Day]") ,ci_level = 0.99)
+
 
 #add grouping variable for habitat, bind dataframes together 
 # Add the 'habitat' column to each data frame
@@ -621,32 +648,22 @@ c_hab_glmmm_treat <- c_hab_glmmm_treat %>%
 c_hab_glmmm_treat$x <- factor(c_hab_glmmm_treat$x, levels = c('Baseline', 'I 1', 'I 2', 'I 3'))
 c_hab_glmmm_treat$group <- factor(c_hab_glmmm_treat$group, levels = c('Uncovered (A)', 'Covered (B)'))
 
-#binary dataframe
-ah_prob <- ggpredict(mod_binary_ah, terms = c("binary"))
-ps_prob <- ggpredict(mod_binary_ps, terms = c("binary"))
-
-ps_prob$group <- 2 
-ps_prob$group <- factor(ps_prob$group)
-
-habitat_prob_df <- bind_rows(ah_prob, ps_prob)
-
-
 ###3.4.3 Main plot ####
 
 model_occupancy_dn<- ggplot(data=modeloutput_df, aes(x=x, y=predicted, fill=group))+
   geom_tile(aes(x=x, y=0.5,height = Inf, fill=present), alpha = 0.3,  show.legend = FALSE) + 
-  scale_fill_manual(values = c("T" = "grey80", "F" = "grey90"), guide = FALSE) +
-  geom_errorbar(aes(ymin = conf.low, ymax = conf.high), size=0.5,width = 0.6 ,position = position_dodge(width = 0.7),  show.legend = FALSE) +
-  #geom_path(aes(group = interaction(habitat, group), linetype = group), linewidth = 0.3 ,position = position_dodge(width = 0.7), show.legend = FALSE) +
+  scale_fill_manual(values = c("T" = "white", "F" = "grey90"), guide = FALSE) +
+  geom_errorbar(aes(ymin = conf.low, ymax = conf.high), size=0.2,width = 0.6 ,position = position_dodge(width = 0.7),  show.legend = FALSE) +
+  geom_path(aes(group = interaction(habitat, group), linetype = group), linewidth = 0.3 ,position = position_dodge(width = 0.7), show.legend = FALSE) +
   scale_linetype_manual(values = c("Day" = "dashed", "Night" = "dotted"))+
-  geom_point(aes(shape=group),size=2, position = position_dodge(width = 0.7),  show.legend = FALSE) +
+  geom_point(aes(shape=group),size=1, position = position_dodge(width = 0.7),  show.legend = FALSE) +
   scale_shape_manual(values = c("Day" = 20, "Night" = 4))+
-  scale_y_continuous(breaks = seq(0, 1,0.1), limits=c(0,1),expand=c(0.05,0)) +
+  scale_y_continuous(breaks = seq(0, 1,0.1), limits=c(0,1),expand=c(0.05,0),
+                     labels = scales::percent(seq(0, 1, 0.1), scale = 100)) +
   scale_x_discrete(expand=c(0,0))+
-  labs(x = 'Experimental sequence',y= 'Habitat occupancy')+
+  labs(x = 'Experimental sequence',y= 'Predicted probability of habitat occupancy')+
   theme_JN()+
   theme(axis.text.x=element_text(size=8),
-        strip.background = element_rect(fill = "grey90"),
         panel.spacing.x =unit(0, "lines") ) + 
   facet_grid(~ habitat, scales = "fixed")+
   geom_text(data = modeloutput_df %>% filter(present == "F"), aes(x = x, y = 0.5, label = "Unavailable"), size = 8/.pt, angle = 90, fontface = "italic")
@@ -658,29 +675,35 @@ ggsave(filename="./figures/model_occupancy_dn.svg", plot=model_occupancy_dn,devi
 
 model_treatment <- ggplot(data=c_hab_glmmm_treat, aes(x=x, y=predicted, fill=group))+
   geom_tile(aes(x=x, y=0.5,height = Inf, fill=present), alpha = 0.3,  show.legend = FALSE) + 
-  scale_fill_manual(values = c("T" = NA, "F" = "grey90"), guide = FALSE) +
-  geom_errorbar(aes(ymin = conf.low, ymax = conf.high), size=0.5,width = 0.6 ,position = position_dodge(width = 0.7),  show.legend = FALSE) +
-  geom_point(aes(shape=group),size=1.5, position = position_dodge(width = 0.7),  show.legend = FALSE) +
+  scale_fill_manual(values = c("T" = "white", "F" = "grey90"), guide = FALSE) +
+  geom_errorbar(aes(ymin = conf.low, ymax = conf.high), size=0.2,width = 0.6 ,position = position_dodge(width = 0.7),  show.legend = FALSE) +
+  geom_point(aes(shape=group),size=1, position = position_dodge(width = 0.7),  show.legend = FALSE) +
   scale_shape_manual(values = c("Covered (B)" = 20, "Uncovered (A)" = 4))+
-  scale_y_continuous(breaks = seq(0, 1,0.1), limits=c(0,1),expand=c(0.05,0)) +
+  scale_y_continuous(breaks = seq(0, 1,0.1), limits=c(0,1),expand=c(0.05,0),
+                     labels = scales::percent(seq(0, 1, 0.1), scale = 100)) +
   scale_x_discrete(expand=c(0,0))+
-  labs(x = 'Experimental sequence',y= 'Daytime artifical habitat occupancy')+
+  labs(x = 'Experimental sequence',y=expression(atop(NA, atop(textstyle('Predicted probabaility of'), textstyle('daytime artificial habitat occupancy')))))+
   coord_cartesian(clip="off")+
   theme_JN()+
-  theme(axis.text.x=element_text(size=8)) + 
+  theme(axis.text.x=element_text(size=8),
+        axis.title.y = element_blank(),
+        axis.text.y = element_blank())+ 
   geom_text(data = c_hab_glmmm_treat %>% filter(present == "F"), aes(x = x, y = 0.5, label = "Unavailable"), size = 8/.pt, angle = 90, fontface = "italic")
 model_treatment
 
-ggsave(filename="./figures/model_treatment.svg", plot=model_treatment,device = "svg",units="cm",width=8,height=8)
+ggsave(filename="./figures/model_treatment.svg", plot=model_treatment,device = "svg",units="cm",width=10,height=8)
 
-###3.4.4 Probability plot ####
+###3.4.4 Pre/post exclusion plot ####
 
-hab_prob_plot <- ggplot(data=habitat_prob_df, aes(x = factor(x, labels = c("Pre-exclusion", "Post-exclusion")), y=predicted, fill=group))+
-  geom_errorbar(aes(ymin = conf.low, ymax = conf.high), width=.2) +
-  geom_line(aes(group=group,linetype = group),  show.legend = FALSE)+
-  geom_point(aes(shape=group),size=2,  show.legend = FALSE) +
-  scale_shape_manual(values = c("1" = 20, "2" = 4))+
-  scale_linetype_manual(values = c("1" = "dashed", "2" = "dotted"))+
+hab_prob_plot <- ggplot(data=modeloutput_df%>%filter(x=="I 1"|x=="I 3")%>%
+                          filter(group=="Day")%>%
+                          filter(habitat=="Pumping station"|habitat=="Artificial habitat"),
+                          aes(x = factor(x, labels = c("Pre-exclusion", "Post-exclusion")), y=predicted, fill=group))+
+  geom_errorbar(aes(ymin = conf.low, ymax = conf.high), size=0.2,width=.2) +
+  geom_line(aes(group=habitat,linetype = habitat), linewidth = 0.3 , show.legend = FALSE)+
+  geom_point(aes(shape=habitat),size=1,  show.legend = FALSE) +
+  scale_shape_manual(values = c("Artificial habitat" = 20, "Pumping station" = 4))+
+  scale_linetype_manual(values = c("Artificial habitat" = "dashed", "Pumping station" = "dotted"))+
   scale_y_continuous(breaks = seq(0, 1, 0.1), limits = c(0, 1), expand = c(0.05, 0), 
                      labels = scales::percent(seq(0, 1, 0.1), scale = 100)) +
   scale_x_discrete()+
@@ -690,8 +713,14 @@ hab_prob_plot <- ggplot(data=habitat_prob_df, aes(x = factor(x, labels = c("Pre-
   theme(axis.text.x=element_text(size=8))
 hab_prob_plot
 
-
 ggsave(filename="./figures/hab_prob_plot2.svg", plot=hab_prob_plot,device = "svg",units="cm",width=10,height=8)
+
+#Combine plots using cowplot
+
+combined_mod <-plot_grid(hab_prob_plot, model_treatment,
+                         ncol = 2, nrow = 1, rel_widths = c(5.6,4.4),align = "h")
+combined_mod
+ggsave(filename="./figures/hab_exclusion_treatment.svg", plot=combined_mod, device = "svg",units="cm", width=16,height=8)
 
 #4 Post-hoc analysis ####
 
@@ -699,25 +728,25 @@ ggsave(filename="./figures/hab_prob_plot2.svg", plot=hab_prob_plot,device = "svg
 #Effect of experimental sequence on habitat occupancy
 
 #AH
-anov1<- aov(c_hab_normalized ~ sequence + Error(trial), data = roach_wide%>%filter(sequence!="Baseline"))
+anov1<- aov(c_hab ~ sequence + Error(trial), data = roach_wide%>%filter(sequence!="Baseline"))
 summary(anov1)
 #AH
-anov2<- aov(c_ps_normalized ~ sequence + Error(trial), data = roach_wide%>%filter(sequence!="I 2"))
+anov2<- aov(c_ps~ sequence + Error(trial), data = roach_wide%>%filter(sequence!="I 2"))
 summary(anov2)
 #OW
-anov3<- aov(c_open_normalized ~ sequence + Error(trial), data = roach_wide)
+anov3<- aov(c_open ~ sequence + Error(trial), data = roach_wide)
 summary(anov3)
 
 #Day night differences in standardized habitat occupancy data
 #Include standard error
 roach_wide %>%
   group_by(light) %>%
-  summarize(mean_c_hab = mean(c_hab_normalized),
-            se_c_hab = sd(c_hab_normalized) / sqrt(n()),
-            mean_c_ps = mean(c_ps_normalized),
-            se_c_ps = sd(c_ps_normalized) / sqrt(n()),
-            mean_c_open = mean(c_open_normalized),
-            se_c_open = sd(c_open_normalized) / sqrt(n()))
+  summarize(mean_c_hab = mean(c_hab),
+            se_c_hab = sd(c_hab) / sqrt(n()),
+            mean_c_ps = mean(c_ps),
+            se_c_ps = sd(c_ps) / sqrt(n()),
+            mean_c_open = mean(c_open),
+            se_c_open = sd(c_open) / sqrt(n()))
 
 #Check level lengths and use min length for comparisons
 table(roach_wide %>%
@@ -734,7 +763,23 @@ i1_base_ps<-  roach_wide %>%
   ungroup() %>%
   select(-row_num)
 
-t.test(c_ps_normalized ~ sequence,data=i1_base_ps, paired = TRUE)
+t.test(c_ps~ sequence,data=i1_base_ps, paired = TRUE)
+
+#Create new DF for paired comparison between intervention 1 artificial habitat/pumping station occupancy
+#Remove rows from sequence category to allow for paired comparison
+#Convert to long and add dummy variable for leveling
+
+i1_hab_ps_long <- roach_wide %>%
+  filter(light == "Day" & sequence %in% c("I 1")) %>%
+  slice_head(n = 630) %>%
+  pivot_longer(
+    cols = c("c_hab", "c_ps"),
+    names_to = "hab_count",
+    values_to = "count"
+  ) %>%
+  mutate(hab_count = recode(hab_count, c_hab = "c_hab1", c_ps = "c_ps1"))
+
+t.test(count~ hab_count,data=i1_hab_ps_long, paired = TRUE)
 
 #Create new DF for paired comparison between intervention 1 and intervention 2 artificial habitat occupancy
 #Remove rows from sequence category to allow for paired comparison
@@ -748,7 +793,7 @@ i1_i2_hab<- roach_wide %>%
   ungroup() %>%
   select(-row_num)
 
-t.test(c_hab_normalized ~ sequence,data=i1_i2_hab, paired = TRUE)
+t.test(c_hab~ sequence,data=i1_i2_hab, paired = TRUE)
 
 #Create new DF for paired comparison between intervention 1 and intervention 3 pumping station occupancy
 #Remove rows from sequence category to allow for paired comparison. Match 630 rows of I 1
@@ -759,7 +804,7 @@ i1_i3_ps <- roach_wide %>%
   filter(!(sequence == "I 1" & row_number() > 630)) %>%
   ungroup()
 
-t.test(c_ps_normalized ~ sequence,data=i1_i3_ps, paired = TRUE)
+t.test(c_ps ~ sequence,data=i1_i3_ps, paired = TRUE)
 
 #Create new DF for paired comparison between intervention 2 and intervention 3 artificial habitat occupancy
 #Remove rows from sequence category to allow for paired comparison. Match 630 rows of I 2
@@ -770,7 +815,7 @@ i2_i3_hab<- roach_wide %>%
   filter(!(sequence == "I 2" & row_number() > 630)) %>%
   ungroup()
 
-t.test(c_hab_normalized ~ sequence,data=i2_i3_hab, paired = TRUE)
+t.test(c_hab~ sequence,data=i2_i3_hab, paired = TRUE)
 
 #Create new DF for paired comparison between intervention 1 and intervention 3 artificial habitat occupancy
 #Remove rows from sequence category to allow for paired comparison. Match 630 rows of I 2
@@ -781,7 +826,7 @@ i1_i3_hab<- roach_wide %>%
   filter(!(sequence == "I 1" & row_number() > 630)) %>%
   ungroup()
 
-t.test(c_hab_normalized ~ sequence,data=i1_i3_hab, paired = TRUE)
+t.test(c_hab~ sequence,data=i1_i3_hab, paired = TRUE)
 
 #Create new DF for paired comparison between treatments AH
 #Remove rows from sequence category to allow for paired comparison. Match 630 rows of I 2
@@ -805,358 +850,3 @@ treatment_ps<- roach_wide %>%
 table(treatment_ps$sequence)
 
 t.test(c_ps_normalized ~ treatment,data=treatment_ps, paired = TRUE) 
-
-
-
-
-
-
-
-
-
-
-
-
-
-# 5 BiNomial####
-###AH ####
-
-roach_wide <- roach_wide %>%
-   mutate(
-    c_hab_f = 12 - c_hab,
-    c_ps_f = 12 - c_ps,
-    c_open_f = 12 - c_open)
-
-#Null model
-mod1 <- glmmTMB(cbind(c_hab,c_hab_f) ~ 1, data = roach_wide%>%filter(sequence!="Baseline"),
-                family = binomial(link="logit"))
-summary(mod1)
-#AIC  57481.3
-
-#Add fixed effects
-mod1.1 <- update(mod1, . ~ sequence + light + treatment)
-summary(mod1.1)
-#AIC 42802.4
-#Plot fit
-plot(ggpredict(mod1.1, terms = c("sequence","light")))
-#Model predictions good, close to observed.
-
-#Improve by adding repeated measures and temporal dependency 
-mod1.2 <- update(mod1.1, . ~ . + (1 | time_factor/day/trial))
-summary(mod1.2)
-#AIC 21416.6
-#Plot fit
-plot(ggpredict(mod1.2, terms = c("sequence","light")))
-
-#Model predictions hugely improved. Supported by AIC and loglik
-
-#As per reviewer comments, consider random effect of tank
-mod1.3 <- update(mod1.2, . ~ . + (1 | time_factor/day/trial) +(1|tank))
-summary(mod1.3)
-#AIC 21309.3 small improvement
-#Plot fit
-plot(ggpredict(mod1.3, terms = c("sequence","light")))
-
-#Add interaction between sequence & light. Advice from Marco
-mod1.4 <- update(mod1.3, . ~ . + sequence:light)
-summary(mod1.4)
-#AIC 21016.8 improved
-#Plot fit
-plot(ggpredict(mod1.4, terms = c("sequence","light")))+
-  scale_y_continuous(breaks = seq(0, 1, 0.1), limits = c(0, 1), expand = c(0, 0), 
-                     labels = scales::percent(seq(0, 1, 0.1), scale = 100))
-#ggpredict fixes treatment. Try alternative gggaverage for overall effect.
-plot(ggaverage(mod1.2, terms = c("sequence","light"), vcov=vcov(mod1.4)))+
-  scale_y_continuous(breaks = seq(0, 1, 0.1), limits = c(0, 1), expand = c(0, 0), 
-                     labels = scales::percent(seq(0, 1, 0.1), scale = 100))
-#Improved fit and error distribution
-
-#Plot simulated residuals to check fit of model
-fittedmod1.4 <- mod1.4
-simuout1 <- simulateResiduals(fittedModel = fittedmod1.4)
-plot(simuout1, quantreg = T)
-
-residualsmod1.4 <- residuals(mod1.4)
-qqnorm(residualsmod1.4)
-qqline(residualsmod1.4)
-hist(residualsmod1.4, breaks = "FD", col = "lightblue")
-
-#Observed vs expected show good relationship. Overdispersion present but unlikely to be treated in binomial model.
-#quantile deviations likely a result of dispersion. Expected due to values close to 0 and 1.
-
-
-
-test <- ggaverage(mod1.4, terms = c("sequence",  "light"),vcov=vcov(mod1.4))
-test2 <- ggpredict(mod1.4, terms = c("sequence",  "light"))
-
-ggplot(test, aes(x = x, y= predicted, colour = group))+
-  geom_point()+geom_errorbar(aes(ymin=conf.low, ymax = conf.high))
-ggplot(test2, aes(x = x, y= predicted, colour = group))+
-  geom_point()+geom_errorbar(aes(ymin=conf.low, ymax = conf.high))
-
-
-
-
-###PS ####
-#Null model
-mod2 <- glmmTMB(cbind(c_ps,c_ps_f) ~ 1, data = roach_wide%>%filter(sequence!="I 2"),
-                family = binomial(link="logit"))
-summary(mod2)
-#AIC  76209.6 
-
-#Add fixed effects
-mod2.1 <- update(mod2, . ~ sequence + light + treatment)
-summary(mod2.1)
-#AIC 54178.5 
-#Plot fit
-plot(ggpredict(mod1.1, terms = c("sequence","light")))
-#Model predictions good, close to observed.
-
-#Improve by adding repeated measures and temporal dependency 
-mod2.2 <- update(mod2.1, . ~ . + (1 | time_factor/day/trial))
-summary(mod2.2)
-#AIC 13274.8 
-#Plot fit
-plot(ggpredict(mod2.2, terms = c("sequence","light")))
-#Model predictions improved. Supported by AIC and loglik
-
-#As per reviewer comments, consider random effect of tank
-mod2.3 <- update(mod2.2, . ~ . + (1 | time_factor/day/trial) +(1|tank))
-summary(mod2.3)
-#Plot fit
-plot(ggpredict(mod2.3, terms = c("sequence","light")))
-#MODEL FAILS TO CONVERGE
-
-#Add in interaction term to see if model fit is improved and converges
-mod2.4 <- update(mod2.3, . ~ . + sequence:light)
-summary(mod2.4)
-#AIC 13267.3
-#Model now converges and provides an improved fit
-#Plot fit
-plot(ggpredict(mod2.4, terms = c("sequence","light")))
-#ggpredict produces perfect separation. Try alternative gggaverage for overall effect.
-plot(ggaverage(mod2.4, terms = c("sequence","light", "treatment"), vcov=vcov(mod2.4)))
-#More accurate predictions but errors still very small.
-
-#Plot simulated residuals to check fit of model
-fittedmod2.4 <- mod2.4
-simuout1 <- simulateResiduals(fittedModel = fittedmod2.4)
-plot(simuout1, quantreg = T)
-
-residualsmod2.4 <- residuals(mod2.4)
-qqnorm(residualsmod2.4)
-qqline(residualsmod2.4)
-hist(residualsmod2.4, breaks = "FD", col = "lightblue")
-#Observed vs expected show good relationship. Overdispersion present but unlikely to be treated in binomial model.
-#quantile deviations likely a result of dispersion. Expected due to values close to 0 and 1.
-
-
-
-test <- ggaverage(mod2.4, terms = c("sequence",  "light", "treatment"),vcov=vcov(mod1.4))
-test2 <- ggpredict(mod2.4, terms = c("sequence",  "light"))
-
-ggplot(test, aes(x = x, y= predicted, colour = group))+
-  geom_point()+geom_errorbar(aes(ymin=conf.low, ymax = conf.high))
-ggplot(test2, aes(x = x, y= predicted, colour = group))+
-  geom_point()+geom_errorbar(aes(ymin=conf.low, ymax = conf.high))
-
-
-
-###OW ####
-
-mod3 <- glmmTMB(cbind(c_open,c_open_f) ~ 1, data = roach_wide,
-                family = binomial(link="logit"))
-summary(mod3)
-#AIC  70469.0  
-
-#Add fixed effects
-mod3.1 <- update(mod3, . ~ sequence + light + treatment)
-summary(mod3.1)
-#AIC 56044.5   
-#Plot fit
-plot(ggpredict(mod3.1, terms = c("sequence","light")))
-#Model predictions good, close to observed.
-
-#Improve by adding repeated measures and temporal dependency 
-mod3.2 <- update(mod3.1, . ~ . + (1 | time_factor/day/trial))
-summary(mod3.2)
-#AIC 24043.1   
-#Plot fit
-plot(ggpredict(mod3.2, terms = c("sequence","light")))
-#Model predictions improved. Supported by AIC and loglik
-
-#As per reviewer comments, consider random effect of tank
-mod3.3 <- update(mod3.2, . ~ . + (1 | time_factor/day/trial) +(1|tank))
-summary(mod3.3)
-#AIC 24035.0  
-#Plot fit
-plot(ggpredict(mod3.3, terms = c("sequence","light")))
-
-#Add in interaction term to see if model fit is improved and converges
-mod3.4 <- update(mod3.3, . ~ . + sequence:light)
-summary(mod3.4)
-#AIC 23879.5  
-#Model provides an improved fit
-#Plot fit
-plot(ggpredict(mod3.4, terms = c("sequence","light")))
-#ggpredict produces perfect separation. Try alternative gggaverage for overall effect.
-plot(ggaverage(mod3.4, terms = c("sequence","light"), vcov=vcov(mod2.4)))
-#More accurate predictions but errors still very small.
-
-#Plot simulated residuals to check fit of model
-fittedmod3.4 <- mod3.4
-simuout1 <- simulateResiduals(fittedModel = fittedmod3.4)
-plot(simuout1, quantreg = T)
-
-residualsmod3.4 <- residuals(mod3.4)
-qqnorm(residualsmod3.4)
-qqline(residualsmod3.4)
-hist(residualsmod3.4, breaks = "FD", col = "lightblue")
-#Observed vs expected show good relationship.
-#quantile deviations likely a result of dispersion. Expected due to values close to 0 and 1.
-
-
-
-
-
-
-
-
-
-
-
-
-#5 Zero-one-inflated beta model ####
-
-#Considering new model approach using zero-one-inflated beta model distribution to account for U-shaped distribution in data.
-
-#First, modify original rescaled variable to not add 0.0000001
-
-#standardise raw count data to scale of 0 - 1
-#across function looks at each habitat count variable, divides them by the max value, returns new variable
-
-roach_wide <- roach_wide %>%
-  mutate(across(c(c_hab, c_ps, c_open), ~ . / max(.), .names = "{.col}_normalized_b"))
-
-###5.1 AH ####
-
-library(brms)
-
-#Null model
-
-brmmod <- brm(
-  bf(c_hab_normalized_b ~ sequence + light + treatment + (1 | trial)),  # Zero-inflation part of the model
-  family = zero_one_inflated_beta(),  # Specifies the use of a zero-one-inflated beta distribution
-  data = roach_wide
-)
-
-
-mod1_b <- glmmTMB(c_hab_normalized ~ 1, data = roach_wide%>%filter(sequence!="Baseline"),
-                  family = betabinomial(link="logit"))
-summary(mod1_b)
-
-#Add fixed effects
-mod1.1_b <- update(mod1_b, c_hab ~ sequence + light + treatment)
-summary(mod1.1_b)
-#Plot fit
-plot(ggpredict(mod1.1_b, terms = c("sequence","light")))
-
-#Model predictions good, close to observed.
-#Improve by adding repeated measures and temporal dependency 
-
-#Add random effects
-mod1.2_b <- update(mod1.1_b, . ~ . + (1 | time_factor/day/trial))
-summary(mod1.2_b)
-#Plot fit
-plot(ggpredict(mod1.2_b, terms = c("sequence","light")))
-
-#Model predictions improved. Supported by AIC and loglik
-
-#Plot simulated residuals to check fit of model
-fittedmod1.2 <- mod1.2
-simuout1 <- simulateResiduals(fittedModel = fittedmod1.2)
-plot(simuout1, quantreg = T)
-
-residualsmod1.2_b <- residuals(mod1.2_b)
-qqnorm(residualsmod1.2_b)
-qqline(residualsmod1.2_b)
-hist(residualsmod1.2_b, breaks = "FD", col = "lightblue")
-
-#Generally follows a linear relationship, accepted as approx normal
-#quantile deviations likely a result of dispersion. Expected due to values close to 0 and 1.
-
-###5.2 PS ####
-
-#Null model
-mod2 <- glmmTMB(c_ps_normalized ~ 1, data = roach_wide%>%filter(sequence!="I 2"),
-                family = gaussian(link="log"))
-summary(mod2)
-
-#Add fixed effects
-mod2.1 <- update(mod2, c_ps_normalized ~ sequence + light + treatment)
-summary(mod2.1)
-#Plot fit
-plot(ggpredict(mod2.1, terms = c("sequence","light")))
-
-#Model predictions good, close to observed.
-#Improve by adding repeated measures and temporal dependency 
-
-#Add random effects
-mod2.2 <- update(mod2.1, . ~ . + (1 | time_factor/day/trial))
-summary(mod2.2)
-#Plot fit
-plot(ggpredict(mod2.2, terms = c("sequence","light")))
-
-#Model predictions improved. Supported by AIC and loglik
-
-#Plot simulated residuals to check fit of model
-fittedmod2.2 <- mod2.2
-simuout2 <- simulateResiduals(fittedModel = fittedmod2.2)
-plot(simuout2, quantreg = T)
-
-residualsmod2.2 <- residuals(mod2.2)
-qqnorm(residualsmod2.2)
-qqline(residualsmod2.2)
-hist(residualsmod2.2, breaks = "FD", col = "lightblue")
-
-#Deviates significantly from a normal distribution
-#quantile deviations likely a result of dispersion. Expected due to values close to 0 and 1.
-
-###5.3 OW ####
-
-#Null model
-mod3 <- glmmTMB(c_open_normalized ~ 1, data = roach_wide,
-                family = gaussian(link="log"))
-summary(mod3)
-
-#Add fixed effects
-mod3.1 <- update(mod3, c_open_normalized ~ sequence + light + treatment)
-summary(mod3.1)
-#Plot fit
-plot(ggpredict(mod3.1, terms = c("sequence","light")))
-
-#Model predictions good, close to observed.
-#Improve by adding repeated measures and temporal dependency 
-
-#Add random effects
-mod3.2 <- update(mod3.1, . ~ . + (1 | time_factor/day/trial))
-summary(mod3.2)
-#Plot fit
-plot(ggpredict(mod3.2, terms = c("sequence","light")))
-
-#Model predictions improved. Supported by AIC and loglik
-
-#Plot simulated residuals to check fit of model
-fittedmod3.2 <- mod3.2
-simuout3 <- simulateResiduals(fittedModel = fittedmod3.2)
-plot(simuout3, quantreg = T)
-
-residualsmod3.2 <- residuals(mod3.2)
-qqnorm(residualsmod3.2)
-qqline(residualsmod3.2)
-hist(residualsmod3.2, breaks = "FD", col = "lightblue")
-
-#Deviates significantly from a normal distribution
-#Deviates from linear distribution. Confounded by daytime variation
-
-
