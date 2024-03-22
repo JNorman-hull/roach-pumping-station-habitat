@@ -501,6 +501,13 @@ hist(residualsmod1.2, breaks = "FD", col = "lightblue")
 #quantile deviations likely a result of dispersion. Expected due to values close to 0 and 1.
 
 
+#ANOVA to compare model with sequence vs without
+#effectively a likelihood-ratio test
+anova(mod1.2, update(mod1.2, . ~ . - sequence - sequence:light))
+
+#report chsq, df, p
+# “(GLMM: Δ log-likelihood = 849, df = 4, p < 0.001)”.
+
 
 ###3.3.2 PS ####
 
@@ -546,6 +553,13 @@ hist(residualsmod2.2, breaks = "FD", col = "lightblue")
 #Observed vs expected show good relationship. Overdispersion not present.
 #quantile deviations likely a result of dispersion. Expected due to values close to 0 and 1.
 
+#ANOVA to compare model with sequence vs without
+#effectively a likelihood-ratio test
+anova(mod2.2, update(mod2.2, . ~ . - sequence - sequence:light))
+
+#report chsq, df, p
+# “(GLMM: Δ log-likelihood = 720, df = 4, p < 0.001)”.
+
 
 ###3.3.3 OW ####
 
@@ -589,6 +603,14 @@ qqline(residualsmod3.2)
 hist(residualsmod3.2, breaks = "FD", col = "lightblue")
 #Observed vs expected show good relationship.
 #quantile deviations likely a result of dispersion. Expected due to values close to 0 and 1.
+
+#ANOVA to compare model with sequence vs without
+#effectively a likelihood-ratio test
+anova(mod3.2, update(mod3.2, . ~ . - sequence - sequence:light))
+
+#report chsq, df, p
+# “(GLMM: Δ log-likelihood = 595, df = 6, p < 0.001)”.
+
 
 ##3.4 Plot GLMM####
 
@@ -722,8 +744,9 @@ combined_mod <-plot_grid(hab_prob_plot, model_treatment,
 combined_mod
 ggsave(filename="./figures/hab_exclusion_treatment.svg", plot=combined_mod, device = "svg",units="cm", width=16,height=8)
 
-#4 Post-hoc analysis ####
+#4 Post-hoc sensitivity analysis ####
 
+#sensitivity analysis to confirm model results
 #Used repeated measures ANOVA and paired t tests to account for grouped variables
 #Effect of experimental sequence on habitat occupancy
 
